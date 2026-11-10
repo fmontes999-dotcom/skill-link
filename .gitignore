@@ -1,0 +1,10 @@
+# Generado por scripts/build.mjs en Render
+dist/
+
+# Configuración local (se crea a partir de config.example.js)
+config.js
+.env
+
+# Informes del curso: contienen nombres del equipo; no subirlos a un repositorio público
+*.docx
+~$*.docx

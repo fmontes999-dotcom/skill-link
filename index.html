@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Skill-Link conecta emprendimientos estudiantiles con la comunidad PUCE. Publica gratis y paga una comisión solo cuando vendes."
+    />
+    <meta name="theme-color" content="#f7f8f4" />
+    <title>Skill-Link | Emprende dentro de la PUCE</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+    <script src="config.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="demo-banner">
+      <span class="demo-dot"></span>
+      <span>Exclusivo para la comunidad PUCE · Publicar es gratis, solo pagas una comisión del <strong data-rate>10%</strong> cuando vendes</span>
+    </div>
+
+    <header class="site-header">
+      <a class="brand" href="#" aria-label="Skill-Link, inicio">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span></span>
+        <span>skill<span class="brand-dash">-</span>link</span>
+      </a>
+      <nav class="main-nav" aria-label="Navegación principal">
+        <a class="nav-link" href="#explorar">Explorar</a>
+        <a class="nav-link" href="#como-funciona">Cómo funciona</a>
+        <a class="nav-link" href="#comision">Comisión</a>
+      </nav>
+      <div class="header-actions">
+        <button class="button button-outline" id="open-publish" type="button">
+          <span aria-hidden="true">＋</span> Publicar
+        </button>
+        <button class="button button-dark header-login" id="open-login" type="button">Ingresar</button>
+        <a class="avatar-button hidden" id="open-panel" href="#panel" aria-label="Abrir mi panel">
+          <span id="avatar-initials">SL</span>
+          <i class="avatar-badge hidden" id="avatar-badge" aria-hidden="true"></i>
+        </a>
+      </div>
+    </header>
+
+    <!-- ============ VISTA PRINCIPAL ============ -->
+    <main id="home-view">
+      <section class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="eyebrow-icon">✳</span> TALENTO QUE SE ENCUENTRA</div>
+          <h1>Lo que buscas,<br />está <span>más cerca.</span></h1>
+          <p>
+            Descubre lo que crean y ofrecen estudiantes de la PUCE.<br class="desktop-break" />
+            Paga con QR de Banco Pichincha y recibe en un Punto Link.
+          </p>
+          <a class="button button-dark hero-button" href="#explorar">
+            Explorar emprendimientos <span aria-hidden="true">↘</span>
+          </a>
+          <div class="hero-proof">
+            <div class="proof-avatars" aria-hidden="true"><i>A</i><i>M</i><i>J</i></div>
+            <span>Hecho por estudiantes, para la comunidad</span>
+          </div>
+        </div>
+        <div class="hero-art" aria-label="Ilustración de una bolsa de compras y productos">
+          <div class="art-sparkle sparkle-one">✳</div>
+          <div class="art-sparkle sparkle-two">✦</div>
+          <div class="art-circle"></div>
+          <div class="art-card art-note"><span>hecho con</span><strong>♥</strong><span>talento PUCE</span></div>
+          <div class="art-bag"><div class="bag-handle"></div><span class="bag-word">skill<br />link</span></div>
+          <div class="art-flower flower-one"><i></i><i></i><i></i><i></i><i></i><b></b></div>
+          <div class="art-flower flower-two"><i></i><i></i><i></i><i></i><i></i><b></b></div>
+          <div class="art-leaf"></div>
+          <div class="art-caption"><span class="caption-dot"></span> Hecho aquí, para ti</div>
+        </div>
+      </section>
+
+      <section class="explore-section" id="explorar">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow eyebrow-green">EL MERCADO DE NUESTRA COMUNIDAD</div>
+            <h2>Encuentra algo <span>único.</span></h2>
+          </div>
+          <div class="result-count" id="result-count" aria-live="polite"></div>
+        </div>
+
+        <div class="setup-notice hidden" id="setup-notice">
+          <strong>Falta conectar Supabase.</strong>
+          Crea el archivo <code>config.js</code> con la URL y la clave pública (anon) de tu proyecto, o configura
+          <code>SUPABASE_URL</code> y <code>SUPABASE_ANON_KEY</code> en Render. Los pasos están en el README.
+        </div>
+
+        <div class="discovery-tools">
+          <label class="search-box">
+            <span class="search-icon" aria-hidden="true">⌕</span>
+            <input id="search-input" type="search" placeholder="¿Qué te gustaría encontrar?" autocomplete="off" />
+            <kbd>⌘ K</kbd>
+          </label>
+          <div class="category-list" id="category-list" aria-label="Filtrar por categoría">
+            <button class="category-chip selected" data-category="Todos" type="button">Todo</button>
+            <button class="category-chip" data-category="Comida" type="button"><span>🥐</span> Comida</button>
+            <button class="category-chip" data-category="Arte y regalos" type="button"><span>🎨</span> Arte y regalos</button>
+            <button class="category-chip" data-category="Servicios" type="button"><span>✦</span> Servicios</button>
+            <button class="category-chip" data-category="Bienestar" type="button"><span>🌿</span> Bienestar</button>
+            <button class="category-chip" data-category="Favoritos" type="button"><span>♡</span> Favoritos</button>
+          </div>
+        </div>
+
+        <div class="product-grid" id="product-grid" aria-live="polite"></div>
+        <div class="empty-state hidden" id="empty-state">
+          <span>⌕</span>
+          <h3 id="empty-title">No encontramos resultados</h3>
+          <p id="empty-text">Prueba con otra búsqueda o categoría.</p>
+          <button class="text-button" id="reset-filters" type="button">Limpiar filtros</button>
+        </div>
+      </section>
+
+      <section class="how-section" id="como-funciona">
+        <div class="how-intro">
+          <div class="eyebrow">FÁCIL, CERCANO Y LOCAL</div>
+          <h2>Conectar es<br /><span>el primer paso.</span></h2>
+          <p>Pides en la app, pagas con el QR de Banco Pichincha del emprendedor y confirmas la entrega con un QR en el Punto Link.</p>
+        </div>
+        <div class="steps">
+          <article class="step-card">
+            <span class="step-number">01</span>
+            <div class="step-icon step-icon-mint">⌕</div>
+            <h3>Descubre</h3>
+            <p>Explora productos y servicios creados por estudiantes de la PUCE.</p>
+          </article>
+          <article class="step-card">
+            <span class="step-number">02</span>
+            <div class="step-icon step-icon-yellow">♡</div>
+            <h3>Pide</h3>
+            <p>Haz tu pedido. Quien emprende lo acepta y fija el Punto Link y la hora.</p>
+          </article>
+          <article class="step-card">
+            <span class="step-number">03</span>
+            <div class="step-icon step-icon-blue">▦</div>
+            <h3>Paga con QR</h3>
+            <p>Escanea el QR de cobro del emprendedor desde tu app de Banco Pichincha.</p>
+          </article>
+          <article class="step-card">
+            <span class="step-number">04</span>
+            <div class="step-icon step-icon-lilac">↗</div>
+            <h3>Confirma la entrega</h3>
+            <p>Muestra tu QR de entrega en el Punto Link y la venta queda registrada.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="commission-section" id="comision">
+        <div class="commission-copy">
+          <div class="eyebrow eyebrow-green">UN MODELO JUSTO PARA QUIEN EMPRENDE</div>
+          <h2>Publicar es gratis.<br /><span>Pagas solo cuando vendes.</span></h2>
+          <p>
+            Skill-Link cobra al emprendedor una comisión del <strong data-rate>10%</strong> únicamente por las ventas
+            concretadas desde la aplicación. Sin mensualidades, suscripciones ni recargas.
+          </p>
+          <ul class="check-list">
+            <li>Sin pagos por adelantado ni planes que comprar.</li>
+            <li>Si el pedido se cancela antes de la entrega, no hay comisión.</li>
+            <li>El comprador paga el precio publicado, sin recargos.</li>
+            <li>Cada venta y su comisión aparecen en tu panel.</li>
+          </ul>
+        </div>
+        <div class="calculator-card">
+          <div class="calc-rate"><strong data-rate>10%</strong><span>por venta concretada</span></div>
+          <label class="calc-input">Si vendes algo a
+            <span class="calc-field"><span>$</span><input id="calc-price" type="number" min="0" max="9999" step="0.01" value="5.00" inputmode="decimal" /></span>
+          </label>
+          <div class="calc-row"><span>Comisión Skill-Link</span><strong id="calc-fee">$0,50</strong></div>
+          <div class="calc-row calc-total"><span>Recibes tú</span><strong id="calc-net">$4,50</strong></div>
+          <p class="calc-note">Las comisiones se acumulan en tu panel y las pagas escaneando el QR de Skill-Link desde tu app de Banco Pichincha.</p>
+        </div>
+      </section>
+
+      <section class="seller-banner">
+        <div class="seller-sparkle">✳</div>
+        <div>
+          <div class="eyebrow">TU TALENTO MERECE UN LUGAR</div>
+          <h2>¿Tienes algo para compartir?</h2>
+          <p>Publica gratis y llega a toda la comunidad PUCE.</p>
+        </div>
+        <button class="button button-light" id="open-publish-bottom" type="button">
+          Publica gratis <span aria-hidden="true">↗</span>
+        </button>
+      </section>
+    </main>
+
+    <!-- ============ PANEL DEL USUARIO ============ -->
+    <main id="panel-view" class="panel-view hidden">
+      <div class="panel-header">
+        <div>
+          <div class="eyebrow eyebrow-green">MI PANEL</div>
+          <h1 id="panel-greeting">Hola</h1>
+          <p id="panel-email"></p>
+        </div>
+        <div class="panel-header-actions">
+          <a class="button button-outline" href="#explorar">← Catálogo</a>
+          <button class="button button-outline" id="logout-button" type="button">Cerrar sesión</button>
+        </div>
+      </div>
+      <nav class="panel-tabs" id="panel-tabs" aria-label="Secciones del panel">
+        <a class="panel-tab" data-tab="compras" href="#panel/compras">Mis compras</a>
+        <a class="panel-tab" data-tab="ventas" href="#panel/ventas">Mis ventas</a>
+        <a class="panel-tab" data-tab="publicaciones" href="#panel/publicaciones">Publicaciones</a>
+        <a class="panel-tab" data-tab="comisiones" href="#panel/comisiones">Comisiones</a>
+        <a class="panel-tab" data-tab="perfil" href="#panel/perfil">Perfil y QR</a>
+        <a class="panel-tab hidden" data-tab="admin" href="#panel/admin" id="admin-tab">Administración</a>
+      </nav>
+      <div class="panel-content" id="panel-content" aria-live="polite"></div>
+    </main>
+
+    <footer class="site-footer">
+      <a class="brand footer-brand" href="#"><span class="brand-mark" aria-hidden="true"><span></span><span></span></span><span>skill<span class="brand-dash">-</span>link</span></a>
+      <span>Talento local. Comunidad que conecta.</span>
+      <span class="footer-campus"><span class="caption-dot"></span> Comunidad PUCE</span>
+    </footer>
+
+    <!-- ============ DIÁLOGOS ============ -->
+    <dialog class="app-dialog small-dialog" id="login-dialog" aria-labelledby="login-title">
+      <form class="dialog-form" id="login-email-form">
+        <button class="dialog-close" type="button" data-close aria-label="Cerrar">×</button>
+        <div class="eyebrow eyebrow-green">SOLO COMUNIDAD PUCE</div>
+        <h2 id="login-title">Ingresa con tu correo institucional</h2>
+        <p class="dialog-description" id="login-reason">Te enviaremos un código de acceso. No necesitas contraseña.</p>
+        <label>Correo PUCE<input name="email" type="email" required maxlength="120" autocomplete="email" placeholder="nombre@puce.edu.ec" /></label>
+        <button class="button button-dark dialog-submit" type="submit">Enviarme el código <span>↗</span></button>
+      </form>
+      <form class="dialog-form hidden" id="login-code-form">
+        <button class="dialog-close" type="button" data-close aria-label="Cerrar">×</button>
+        <div class="eyebrow eyebrow-green">REVISA TU CORREO</div>
+        <h2>Ingresa tu código</h2>
+        <p class="dialog-description">Enviamos un código a <strong id="login-sent-to"></strong>. Si llega un enlace, también puedes abrirlo desde este mismo navegador.</p>
+        <label>Código de acceso<input name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" placeholder="123456" /></label>
+        <button class="button button-dark dialog-submit" type="submit">Entrar <span>↗</span></button>
+        <button class="text-button form-link" id="login-back" type="button">Usar otro correo</button>
+      </form>
+    </dialog>
+
+    <dialog class="app-dialog" id="publish-dialog" aria-labelledby="publish-title">
+      <form class="dialog-form" id="publish-form">
+        <button class="dialog-close" type="button" data-close aria-label="Cerrar">×</button>
+        <div class="eyebrow eyebrow-green">UNA IDEA QUE MERECE VERSE</div>
+        <h2 id="publish-title">Publica tu emprendimiento</h2>
+        <p class="dialog-description">Publicar es gratis. Solo se genera una comisión del <strong data-rate>10%</strong> cuando concretas una venta.</p>
+        <label>Nombre del producto o servicio<input name="name" required minlength="2" maxlength="60" placeholder="Ej. Brownies de la casa" /></label>
+        <div class="form-row">
+          <label>Categoría
+            <select name="category" required>
+              <option value="Comida">Comida</option>
+              <option value="Arte y regalos">Arte y regalos</option>
+              <option value="Servicios">Servicios</option>
+              <option value="Bienestar">Bienestar</option>
+            </select>
+          </label>
+          <label>Precio (USD)<input name="price" id="publish-price" type="number" min="0.01" max="9999" step="0.01" required placeholder="5.00" inputmode="decimal" /></label>
+        </div>
+        <div class="net-preview" id="publish-net"></div>
+        <label>Cuéntanos un poco más<textarea name="description" rows="3" maxlength="300" required placeholder="¿Qué hace especial tu propuesta?"></textarea></label>
+        <label>Foto (opcional · JPG, PNG o WebP, máx. 3 MB)<input name="image" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+        <label class="checkbox-label"><input name="pickup" type="checkbox" checked /> Puedo entregar en un Punto Link</label>
+        <button class="button button-dark dialog-submit" type="submit">Publicar en el catálogo <span>↗</span></button>
+      </form>
+    </dialog>
+
+    <dialog class="app-dialog" id="order-dialog" aria-labelledby="order-title">
+      <form class="dialog-form" id="order-form">
+        <button class="dialog-close" type="button" data-close aria-label="Cerrar">×</button>
+        <div class="eyebrow eyebrow-green">NUEVO PEDIDO</div>
+        <h2 id="order-title">Haz tu pedido</h2>
+        <div class="interest-product" id="order-product"></div>
+        <p class="product-description" id="order-description"></p>
+        <div class="form-row">
+          <label>Cantidad<input name="quantity" id="order-quantity" type="number" min="1" max="20" step="1" value="1" required /></label>
+          <div class="order-total"><span>Total a pagar</span><strong id="order-total">$0,00</strong></div>
+        </div>
+        <label>Mensaje para quien emprende (opcional)<textarea name="message" rows="3" maxlength="300" placeholder="Hola, ¿podemos coordinar la entrega?"></textarea></label>
+        <ol class="mini-steps">
+          <li>Quien emprende acepta tu pedido y fija el Punto Link y la hora.</li>
+          <li>Pagas escaneando su QR de cobro con tu app de Banco Pichincha.</li>
+          <li>Al recibir, muestras tu QR de entrega para registrar la compra.</li>
+        </ol>
+        <button class="button button-dark dialog-submit" type="submit">Enviar pedido <span>↗</span></button>
+        <p class="form-note">Skill-Link no cobra nada al comprador: pagas el precio publicado.</p>
+      </form>
+    </dialog>
+
+    <!-- Diálogo genérico para pagos, QR, escaneo, reseñas, etc. -->
+    <dialog class="app-dialog" id="sheet-dialog">
+      <div class="dialog-form" id="sheet-content"></div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

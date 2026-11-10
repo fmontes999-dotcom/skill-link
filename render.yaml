@@ -1,0 +1,29 @@
+# Blueprint de Render: Static Site para Skill-Link.
+# En Render: New > Blueprint > conecta el repositorio. Te pedirá las dos variables.
+services:
+  - type: web
+    name: skill-link
+    runtime: static
+    buildCommand: node scripts/build.mjs
+    staticPublishPath: ./dist
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(self), microphone=(), geolocation=()
+      - path: /config.js
+        name: Cache-Control
+        value: no-cache
