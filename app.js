@@ -33,6 +33,16 @@ const FAVORITES_KEY = "skill-link-favorites-v2";
 
 const config = window.SKILL_LINK_CONFIG || {};
 const isConfigured = Boolean(config.supabaseUrl && config.supabaseAnonKey && window.supabase);
+
+// El enlace del correo de acceso vuelve a la página con #access_token=... (o #error=... si expiró).
+// Se lee antes de crear el cliente, porque Supabase limpia la URL al procesarla.
+const AUTH_REDIRECT = (() => {
+  const params = new URLSearchParams(location.hash.slice(1));
+  if (params.get("access_token")) return { ok: true };
+  const code = params.get("error_code") || params.get("error");
+  return code ? { ok: false, code } : null;
+})();
+
 const sb = isConfigured ? window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey) : null;
 
 const state = {
@@ -372,12 +382,34 @@ function selectCategory(category) {
 }
 
 /* ---------------------------------------------------------------------
-   Sesión (código por correo institucional)
+   Sesión (enlace o código por correo institucional)
    --------------------------------------------------------------------- */
+
+function loginErrorMessage(error) {
+  const message = error?.message || String(error || "");
+  if (/security purposes|after \d+ seconds/i.test(message)) return "Espera un minuto antes de pedir otro correo de acceso.";
+  if (/rate limit|too many/i.test(message)) return "Se alcanzó el límite de correos de acceso por hora. Inténtalo más tarde.";
+  if (/database error saving new user/i.test(message)) return "Solo pueden crear cuenta los correos @puce.edu.ec.";
+  return message;
+}
 
 async function initAuth() {
   const { data } = await sb.auth.getSession();
+  if (AUTH_REDIRECT) {
+    // Quita los datos del enlace que puedan quedar en la barra de direcciones.
+    const params = new URLSearchParams(location.hash.slice(1));
+    if (params.has("access_token") || params.has("error") || params.has("error_code") || location.hash === "#") {
+      history.replaceState(null, "", location.pathname + location.search);
+    }
+  }
   await setSession(data.session);
+  if (AUTH_REDIRECT?.ok && data.session) {
+    onSignedIn();
+  } else if (AUTH_REDIRECT && !AUTH_REDIRECT.ok) {
+    showToast(AUTH_REDIRECT.code === "otp_expired"
+      ? "El enlace de acceso expiró o ya se usó. Pide uno nuevo."
+      : "No se pudo ingresar con ese enlace. Pide uno nuevo.", true);
+  }
   sb.auth.onAuthStateChange((event, session) => {
     // Se difiere para no llamar a Supabase dentro del callback (evita bloqueos).
     window.setTimeout(() => handleAuthChange(event, session), 0);
@@ -447,7 +479,7 @@ async function refreshBadge() {
 function openLogin(reason, after) {
   if (!requireConfigured()) return;
   state.pendingAction = after || null;
-  $("#login-reason").textContent = reason || "Te enviaremos un código de acceso. No necesitas contraseña.";
+  $("#login-reason").textContent = reason || "Te enviaremos un enlace de acceso a tu correo. No necesitas contraseña.";
   showLoginStep("email");
   if (!els.loginDialog.open) els.loginDialog.showModal();
 }
@@ -1628,11 +1660,10 @@ function bindEvents() {
         email,
         options: { shouldCreateUser: true, emailRedirectTo: `${location.origin}${location.pathname}` },
       });
-      if (error) throw error;
+      if (error) throw new Error(loginErrorMessage(error));
       state.loginEmail = email;
       $("#login-sent-to").textContent = email;
       showLoginStep("code");
-      $("#login-code-form").elements.code.focus();
     });
   });
   $("#login-code-form").addEventListener("submit", (event) => {

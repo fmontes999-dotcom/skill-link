@@ -62,15 +62,18 @@ render.yaml         Blueprint de Render
 4. Ve a **Authentication → URL Configuration**:
    - **Site URL:** la URL de Render (por ejemplo `https://skill-link.onrender.com`).
    - **Redirect URLs:** agrega esa misma URL y, para pruebas locales, `http://localhost:5500`.
-5. Ve a **Authentication → Emails → Templates**. Edita las plantillas **Magic Link** y **Confirm signup** para incluir el código, por ejemplo:
+5. **Correo de acceso.** Con el correo incluido en Supabase (plan gratuito):
+   - Llega un **enlace** en inglés («Sign in» o «Confirm email address»). Al abrirlo, la persona entra a la página con su sesión iniciada.
+   - Solo se envían **2 correos por hora** en todo el proyecto.
+   - No se pueden editar las plantillas.
+6. **Correo SMTP propio (recomendado antes de abrirlo a más personas).** Configúralo en **Authentication → Emails → SMTP Settings**, por ejemplo con Brevo o Resend. Así se quita el límite y puedes editar las plantillas **Magic Link** y **Confirm signup** para que manden un **código**:
 
    ```html
    <h2>Tu código de Skill-Link</h2>
    <p>Ingresa este código en la página: <strong>{{ .Token }}</strong></p>
    ```
 
-   Esto es necesario porque los correos PUCE (Microsoft 365) suelen «abrir» los enlaces automáticamente para revisarlos, y eso invalida los enlaces de un solo uso. El código evita ese problema.
-6. **Correo SMTP (recomendado):** el servidor de correo incluido en Supabase solo envía unos pocos correos por hora. Para usarlo con más personas, configura un SMTP propio en **Authentication → Emails → SMTP Settings** (por ejemplo Resend o Brevo).
+   Si quitas el enlace de la plantilla, los correos PUCE (Microsoft 365) ya no pueden invalidarlo al revisarlo automáticamente. La página acepta tanto el enlace como el código.
 7. Copia los datos de conexión desde **Project Settings → API**. Los vas a usar en Render:
    - **Project URL**
    - **clave pública** `anon` / `publishable`
