@@ -229,16 +229,16 @@
         <button class="dialog-close" type="button" data-close aria-label="Cerrar">×</button>
         <div class="eyebrow eyebrow-green">SOLO COMUNIDAD PUCE</div>
         <h2 id="login-title">Ingresa con tu correo institucional</h2>
-        <p class="dialog-description" id="login-reason">Te enviaremos un enlace de acceso a tu correo. No necesitas contraseña.</p>
+        <p class="dialog-description" id="login-reason">Te enviaremos un código de acceso a tu correo. No necesitas contraseña.</p>
         <label>Correo PUCE<input name="email" type="email" required maxlength="120" autocomplete="email" placeholder="nombre@puce.edu.ec" /></label>
-        <button class="button button-dark dialog-submit" type="submit">Enviarme el enlace <span>↗</span></button>
+        <button class="button button-dark dialog-submit" type="submit">Enviarme el código <span>↗</span></button>
       </form>
       <form class="dialog-form hidden" id="login-code-form">
         <button class="dialog-close" type="button" data-close aria-label="Cerrar">×</button>
         <div class="eyebrow eyebrow-green">REVISA TU CORREO</div>
-        <h2>Abre el enlace del correo</h2>
-        <p class="dialog-description">Enviamos un correo a <strong id="login-sent-to"></strong>. Ábrelo en este dispositivo y toca <strong>Sign in</strong> (la primera vez dice <strong>Confirm email address</strong>). Puede tardar unos minutos y llegar en inglés; revisa también el correo no deseado.</p>
-        <label>¿Te llegó un código numérico? Escríbelo aquí<input name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" placeholder="123456" /></label>
+        <h2>Revisa tu correo</h2>
+        <p class="dialog-description">Enviamos un correo de Skill-Link a <strong id="login-sent-to"></strong>. Escribe aquí el código de 6 dígitos, o toca <strong>Entrar a Skill-Link</strong> en el correo desde este dispositivo. Si no llega en un minuto, revisa el correo no deseado.</p>
+        <label>Código de 6 dígitos<input name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" placeholder="123456" /></label>
         <button class="button button-dark dialog-submit" type="submit">Entrar con el código <span>↗</span></button>
         <button class="text-button form-link" id="login-back" type="button">Usar otro correo</button>
       </form>

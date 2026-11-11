@@ -479,7 +479,7 @@ async function refreshBadge() {
 function openLogin(reason, after) {
   if (!requireConfigured()) return;
   state.pendingAction = after || null;
-  $("#login-reason").textContent = reason || "Te enviaremos un enlace de acceso a tu correo. No necesitas contraseña.";
+  $("#login-reason").textContent = reason || "Te enviaremos un código de acceso a tu correo. No necesitas contraseña.";
   showLoginStep("email");
   if (!els.loginDialog.open) els.loginDialog.showModal();
 }
@@ -1664,6 +1664,7 @@ function bindEvents() {
       state.loginEmail = email;
       $("#login-sent-to").textContent = email;
       showLoginStep("code");
+      $("#login-code-form").elements.code.focus();
     });
   });
   $("#login-code-form").addEventListener("submit", (event) => {
