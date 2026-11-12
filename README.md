@@ -62,7 +62,7 @@ render.yaml         Blueprint de Render
 4. Ve a **Authentication → URL Configuration**:
    - **Site URL:** la URL de Render (por ejemplo `https://skill-link.onrender.com`).
    - **Redirect URLs:** agrega esa misma URL y, para pruebas locales, `http://localhost:5500`.
-5. **Correo de acceso.** *(En el proyecto actual ya está conectado un Gmail por SMTP, con contraseña de aplicación y un límite de 30 correos por hora, y las plantillas en español traen botón y código.)* Con el correo incluido en Supabase (plan gratuito):
+5. **Correo de acceso.** *(En el proyecto actual ya está conectado un Gmail por SMTP, con contraseña de aplicación y un límite de 100 correos por hora (Gmail permite unos 500 al día), y las plantillas en español traen botón y código.)* Con el correo incluido en Supabase (plan gratuito):
    - Llega un **enlace** en inglés («Sign in» o «Confirm email address»). Al abrirlo, la persona entra a la página con su sesión iniciada.
    - Solo se envían **2 correos por hora** en todo el proyecto.
    - No se pueden editar las plantillas.
