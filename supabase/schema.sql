@@ -64,9 +64,13 @@ create table if not exists public.platform_settings (
     check (commission_rate between 0.080 and 0.100),
   payment_qr_path text,   -- QR de cobro de Banco Pichincha de Skill-Link (bucket payment-qr)
   payment_holder text,    -- titular de la cuenta de Skill-Link
+  min_price numeric(10,2) not null default 1.00   -- precio mínimo de venta (USD)
+    check (min_price between 0.01 and 1000),
   updated_at timestamptz not null default now(),
   check (payment_qr_path is null or payment_qr_path like 'platform/%')
 );
+alter table public.platform_settings
+  add column if not exists min_price numeric(10,2) not null default 1.00 check (min_price between 0.01 and 1000);
 insert into public.platform_settings (id) values (true) on conflict (id) do nothing;
 
 -- Perfil de cada usuario (se crea automáticamente al registrarse).
@@ -78,9 +82,11 @@ create table if not exists public.profiles (
   payment_qr_path text,   -- QR de cobro de Banco Pichincha del emprendedor
   payment_holder text check (payment_holder is null or char_length(payment_holder) <= 60),
   role text not null default 'user' check (role in ('user', 'admin')),
+  is_seller boolean not null default false,   -- se activa desde «Cuenta» (todos entran como compradores)
   created_at timestamptz not null default now(),
   check (payment_qr_path is null or payment_qr_path like id::text || '/%')
 );
+alter table public.profiles add column if not exists is_seller boolean not null default false;
 
 -- Puntos Link: lugares y horarios fijos de entrega dentro del campus.
 create table if not exists public.pickup_points (
@@ -90,7 +96,30 @@ create table if not exists public.pickup_points (
   active boolean not null default true
 );
 
--- Publicaciones (productos o servicios).
+-- Tienda del emprendedor: su perfil público y el lugar donde vive su catálogo.
+create table if not exists public.stores (
+  seller_id uuid primary key default auth.uid() references public.profiles (id) on delete cascade,
+  name text not null check (char_length(name) between 2 and 60),
+  slogan text check (slogan is null or char_length(slogan) <= 90),
+  description text check (description is null or char_length(description) <= 600),
+  logo_path text,          -- en el bucket product-images, carpeta del emprendedor
+  faculty text check (faculty is null or char_length(faculty) <= 80),
+  instagram text check (instagram is null or instagram ~ '^[A-Za-z0-9._]{1,30}$'),
+  tiktok text check (tiktok is null or tiktok ~ '^[A-Za-z0-9._]{1,30}$'),
+  facebook text check (facebook is null or facebook ~ '^[A-Za-z0-9.-]{1,80}$'),
+  schedule text check (schedule is null or char_length(schedule) <= 120),
+  pickup_point_ids int[] not null default '{}' check (cardinality(pickup_point_ids) <= 20),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (logo_path is null or logo_path like seller_id::text || '/%')
+);
+
+drop trigger if exists stores_touch_updated_at on public.stores;
+create trigger stores_touch_updated_at
+  before update on public.stores
+  for each row execute function public.touch_updated_at();
+
+-- Productos o servicios del catálogo de cada tienda.
 create table if not exists public.products (
   id uuid primary key default gen_random_uuid(),
   seller_id uuid not null default auth.uid() references public.profiles (id) on delete cascade,
@@ -105,6 +134,57 @@ create table if not exists public.products (
   check (image_path is null or image_path like seller_id::text || '/%')
 );
 create index if not exists products_seller_idx on public.products (seller_id);
+
+-- Precio mínimo de venta (Corrección 1). Se valida aquí, en el servidor, al crear y al editar.
+-- Un producto pausado con precio bajo puede seguir pausado o editarse, pero no activarse
+-- ni cambiar a otro precio menor al mínimo.
+create or replace function public.enforce_min_price()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_min numeric(10,2);
+begin
+  select min_price into v_min from public.platform_settings where id;
+  v_min := coalesce(v_min, 1.00);
+  if new.price < v_min and (tg_op = 'INSERT' or new.active or new.price is distinct from old.price) then
+    raise exception 'El precio mínimo de venta en Skill-Link es $%.', to_char(v_min, 'FM999990.00')
+      using errcode = 'check_violation';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists products_min_price on public.products;
+create trigger products_min_price
+  before insert or update on public.products
+  for each row execute function public.enforce_min_price();
+
+-- Si el administrador sube el mínimo, los productos más baratos quedan pausados.
+create or replace function public.pause_cheap_products()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.min_price is distinct from old.min_price then
+    update public.products set active = false where active and price < new.min_price;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists settings_pause_cheap_products on public.platform_settings;
+create trigger settings_pause_cheap_products
+  after update on public.platform_settings
+  for each row execute function public.pause_cheap_products();
+
+-- Productos que ya existían con un precio menor al mínimo: pausados hasta que se corrijan.
+update public.products set active = false
+where active and price < (select min_price from public.platform_settings where id);
 
 -- Pedidos. Solo se modifican mediante las funciones RPC de más abajo.
 create table if not exists public.orders (
@@ -200,6 +280,20 @@ from (values
 ) as v(name, schedule)
 where not exists (select 1 from public.pickup_points);
 
+-- Emprendedores que ya tenían productos antes de que existieran las tiendas: se les crea
+-- su tienda (con su nombre, que luego pueden cambiar) y se activa su modo vendedor.
+-- Solo ocurre una vez por persona.
+with created as (
+  insert into public.stores (seller_id, name)
+  select pr.id,
+         case when char_length(trim(pr.full_name)) >= 2 then trim(pr.full_name) else 'Emprendimiento PUCE' end
+  from public.profiles pr
+  where exists (select 1 from public.products p where p.seller_id = pr.id)
+    and not exists (select 1 from public.stores s where s.seller_id = pr.id)
+  returning seller_id
+)
+update public.profiles set is_seller = true where id in (select seller_id from created);
+
 -- ---------------------------------------------------------------------
 -- Funciones auxiliares de seguridad
 -- ---------------------------------------------------------------------
@@ -249,6 +343,17 @@ as $$
       );
 $$;
 
+-- ¿Este perfil tiene activado el modo vendedor? (para mostrar su tienda a cualquiera)
+create or replace function public.is_active_seller(p_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (select 1 from public.profiles where id = p_id and is_seller);
+$$;
+
 -- Solo correos institucionales PUCE pueden crear cuenta.
 create or replace function public.handle_new_user()
 returns trigger
@@ -278,6 +383,7 @@ create trigger on_auth_user_created
 
 alter table public.platform_settings enable row level security;
 alter table public.profiles enable row level security;
+alter table public.stores enable row level security;
 alter table public.pickup_points enable row level security;
 alter table public.products enable row level security;
 alter table public.orders enable row level security;
@@ -288,19 +394,24 @@ alter table public.reviews enable row level security;
 
 -- Se parte de cero y se concede solo lo necesario.
 revoke all on
-  public.platform_settings, public.profiles, public.pickup_points, public.products,
+  public.platform_settings, public.profiles, public.stores, public.pickup_points, public.products,
   public.orders, public.order_delivery_codes, public.commission_payments,
   public.commissions, public.reviews
 from anon, authenticated;
 
 grant select on public.platform_settings to anon, authenticated;
-grant update (commission_rate, payment_qr_path, payment_holder, updated_at)
+grant update (commission_rate, payment_qr_path, payment_holder, min_price, updated_at)
   on public.platform_settings to authenticated;
 
 grant select on public.pickup_points to anon, authenticated;
 
 grant select on public.profiles to authenticated;
-grant update (full_name, phone, payment_qr_path, payment_holder) on public.profiles to authenticated;
+grant update (full_name, phone, payment_qr_path, payment_holder, is_seller) on public.profiles to authenticated;
+
+grant select on public.stores to anon, authenticated;
+grant insert on public.stores to authenticated;
+grant update (name, slogan, description, logo_path, faculty, instagram, tiktok, facebook, schedule, pickup_point_ids)
+  on public.stores to authenticated;
 
 grant select, insert, delete on public.products to authenticated;
 grant update (name, category, price, description, image_path, pickup_point, active)
@@ -334,7 +445,25 @@ create policy profiles_update_own on public.profiles
   for update to authenticated
   using (id = auth.uid()) with check (id = auth.uid());
 
--- products: para vender se necesita nombre y QR de cobro en el perfil.
+-- stores: cualquiera ve las tiendas con modo vendedor activo; cada quien edita la suya.
+drop policy if exists stores_read on public.stores;
+create policy stores_read on public.stores
+  for select to anon, authenticated
+  using (public.is_active_seller(seller_id));
+drop policy if exists stores_read_own on public.stores;
+create policy stores_read_own on public.stores
+  for select to authenticated
+  using (seller_id = auth.uid() or public.is_admin());
+drop policy if exists stores_insert_own on public.stores;
+create policy stores_insert_own on public.stores
+  for insert to authenticated
+  with check (seller_id = auth.uid());
+drop policy if exists stores_update_own on public.stores;
+create policy stores_update_own on public.stores
+  for update to authenticated
+  using (seller_id = auth.uid()) with check (seller_id = auth.uid());
+
+-- products: para vender se necesita el modo vendedor, la tienda y el QR de cobro.
 drop policy if exists products_read on public.products;
 create policy products_read on public.products
   for select to authenticated
@@ -346,8 +475,9 @@ create policy products_insert_own on public.products
     seller_id = auth.uid()
     and exists (
       select 1 from public.profiles
-      where id = auth.uid() and full_name <> '' and payment_qr_path is not null
+      where id = auth.uid() and is_seller and full_name <> '' and payment_qr_path is not null
     )
+    and exists (select 1 from public.stores where seller_id = auth.uid())
   );
 drop policy if exists products_update_own on public.products;
 create policy products_update_own on public.products
@@ -385,10 +515,11 @@ create policy reviews_read on public.reviews
   using (buyer_id = auth.uid() or seller_id = auth.uid() or public.is_admin());
 
 -- ---------------------------------------------------------------------
--- Catálogo público (solo columnas seguras, nombre abreviado del vendedor)
+-- Catálogo público (solo columnas seguras; cada producto con el nombre y logo de su tienda)
 -- ---------------------------------------------------------------------
 
-create or replace function public.get_catalog()
+drop function if exists public.get_catalog();
+create function public.get_catalog()
 returns table (
   id uuid,
   name text,
@@ -399,6 +530,7 @@ returns table (
   pickup_point boolean,
   seller_id uuid,
   seller_name text,
+  seller_logo text,
   rating numeric,
   reviews_count bigint,
   created_at timestamptz
@@ -410,19 +542,17 @@ set search_path = public
 as $$
   select
     p.id, p.name, p.category, p.price, p.description, p.image_path, p.pickup_point, p.seller_id,
-    case
-      when split_part(trim(pr.full_name), ' ', 2) <> ''
-        then split_part(trim(pr.full_name), ' ', 1) || ' ' || left(split_part(trim(pr.full_name), ' ', 2), 1) || '.'
-      else coalesce(nullif(trim(pr.full_name), ''), 'Emprendedor PUCE')
-    end as seller_name,
+    s.name as seller_name,
+    s.logo_path as seller_logo,
     round(avg(r.rating)::numeric, 1) as rating,
     count(r.order_id) as reviews_count,
     p.created_at
   from public.products p
-  join public.profiles pr on pr.id = p.seller_id
+  join public.profiles pr on pr.id = p.seller_id and pr.is_seller
+  join public.stores s on s.seller_id = p.seller_id
   left join public.reviews r on r.product_id = p.id
   where p.active
-  group by p.id, pr.full_name
+  group by p.id, s.name, s.logo_path
   order by p.created_at desc
   limit 300;
 $$;
@@ -445,7 +575,10 @@ begin
   if v_uid is null then
     raise exception 'Inicia sesión con tu correo PUCE para hacer un pedido.';
   end if;
-  select * into v_product from public.products where id = p_product_id and active;
+  select p.* into v_product
+  from public.products p
+  join public.profiles pr on pr.id = p.seller_id and pr.is_seller
+  where p.id = p_product_id and p.active;
   if not found then
     raise exception 'Este producto ya no está disponible.';
   end if;
@@ -789,6 +922,9 @@ revoke execute on function public.random_code(int) from public, anon, authentica
 revoke execute on function public.is_admin() from public, anon;
 revoke execute on function public.shares_order(uuid) from public, anon;
 revoke execute on function public.can_view_payment_qr(text) from public, anon;
+revoke execute on function public.enforce_min_price() from public, anon, authenticated;
+revoke execute on function public.pause_cheap_products() from public, anon, authenticated;
+grant execute on function public.is_active_seller(uuid) to anon, authenticated;
 grant execute on function public.is_admin() to authenticated;
 grant execute on function public.shares_order(uuid) to authenticated;
 grant execute on function public.can_view_payment_qr(text) to authenticated;

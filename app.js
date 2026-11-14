@@ -6,11 +6,12 @@
    ===================================================================== */
 
 const CATEGORY_STYLE = {
-  Comida: { emoji: "🥐", tone: "peach" },
-  "Arte y regalos": { emoji: "🎨", tone: "lilac" },
-  Servicios: { emoji: "✨", tone: "blue" },
-  Bienestar: { emoji: "🌿", tone: "sage" },
+  Comida: { emoji: "🥐", tone: "sky" },
+  "Arte y regalos": { emoji: "🎨", tone: "indigo" },
+  Servicios: { emoji: "✨", tone: "cyan" },
+  Bienestar: { emoji: "🌿", tone: "teal" },
 };
+const DEFAULT_STYLE = { emoji: "✨", tone: "sky" };
 const STATUS_LABELS = {
   pendiente: "Pendiente",
   aceptado: "Aceptado",
@@ -30,11 +31,18 @@ const PUCE_EMAIL = /@([a-z0-9-]+\.)*puce\.edu\.ec$/i;
 const QR_PREFIX = "SKILLLINK|ENTREGA|";
 const SCANNER_SRC = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
 const FAVORITES_KEY = "skill-link-favorites-v2";
+const THEME_KEY = "skill-link-theme";
+const LOGIN_KEY = "skill-link-login-v1";
+const OTP_TTL_MS = 15 * 60 * 1000;   // igual que mailer_otp_exp en Supabase (900 s)
+const RESEND_WAIT_MS = 60 * 1000;    // Supabase permite un correo por minuto a la misma persona
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PANEL_ALIASES = { perfil: "cuenta", publicaciones: "tienda" };
+const SELLER_TABS = ["ventas", "tienda", "comisiones"];
 
 const config = window.SKILL_LINK_CONFIG || {};
 const isConfigured = Boolean(config.supabaseUrl && config.supabaseAnonKey && window.supabase);
 
-// El enlace del correo de acceso vuelve a la página con #access_token=... (o #error=... si expiró).
+// Correos antiguos con enlace vuelven con #access_token=... (o #error=... si expiró).
 // Se lee antes de crear el cliente, porque Supabase limpia la URL al procesarla.
 const AUTH_REDIRECT = (() => {
   const params = new URLSearchParams(location.hash.slice(1));
@@ -48,18 +56,26 @@ const sb = isConfigured ? window.supabase.createClient(config.supabaseUrl, confi
 const state = {
   session: null,
   profile: null,
-  settings: { commission_rate: 0.1, payment_qr_path: null, payment_holder: null },
+  store: null,
+  settings: { commission_rate: 0.1, min_price: 1, payment_qr_path: null, payment_holder: null },
   catalog: [],
   catalogLoaded: false,
+  stores: [],
+  storeViewId: null,
   pickupPoints: [],
   category: "Todos",
   activeProduct: null,
+  editingProduct: null,
   panelTab: "compras",
-  pendingAction: null,
-  loginEmail: "",
+  pendingAction: null,   // { type: "order", productId } | { type: "publish" } | { type: "hash", hash }
+  login: null,           // { email, sentAt, resent }
+  loggingOut: false,
   scanner: null,
 };
 const panelData = { orders: new Map(), products: new Map(), pendingCommissions: 0, payments: new Map() };
+let resolveCatalogReady;
+const catalogReady = new Promise((resolve) => { resolveCatalogReady = resolve; });
+let pickupReady = Promise.resolve();
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -73,7 +89,11 @@ const els = {
   homeView: $("#home-view"),
   panelView: $("#panel-view"),
   panelContent: $("#panel-content"),
+  storeView: $("#store-view"),
+  storeContent: $("#store-content"),
+  storeStrip: $("#store-strip"),
   loginDialog: $("#login-dialog"),
+  settingsDialog: $("#settings-dialog"),
   publishDialog: $("#publish-dialog"),
   orderDialog: $("#order-dialog"),
   sheetDialog: $("#sheet-dialog"),
@@ -98,6 +118,47 @@ function escapeHtml(value) {
 
 function formatPrice(value) {
   return money.format(Number(value) || 0);
+}
+
+function minPrice() {
+  const value = Number(state.settings.min_price);
+  return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
+function minPriceText(value = minPrice()) {
+  return `$${Number(value).toFixed(2)}`;
+}
+
+function minPriceMessage() {
+  return `El precio mínimo de venta en Skill-Link es ${minPriceText()}.`;
+}
+
+function formatTime(value) {
+  return new Intl.DateTimeFormat("es-EC", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(value));
+}
+
+function isSeller() {
+  return Boolean(state.profile?.is_seller);
+}
+
+function storeInitials(name) {
+  const parts = String(name || "SL").trim().split(/\s+/).filter(Boolean);
+  return `${parts[0]?.[0] || "S"}${parts[1]?.[0] || ""}`.toUpperCase();
+}
+
+// Los logos van sobre fondo blanco en ambos temas para que no se pierdan.
+function storeLogo(name, path, className = "store-logo") {
+  return path
+    ? `<span class="${className}"><img src="${escapeHtml(productImageUrl(path))}" alt="" loading="lazy" /></span>`
+    : `<span class="${className} store-logo-empty" aria-hidden="true">${escapeHtml(storeInitials(name))}</span>`;
+}
+
+// Acepta "@usuario", "usuario" o el enlace completo y devuelve solo el usuario.
+function cleanHandle(value) {
+  return String(value || "").trim()
+    .replace(/^https?:\/\/(www\.|m\.)?(instagram|tiktok|facebook)\.com\//i, "")
+    .replace(/^@/, "")
+    .replace(/[/?#].*$/, "");
 }
 
 function formatDate(value, withTime = true) {
@@ -177,6 +238,26 @@ function errorMessage(error) {
   return message || "Ocurrió un error inesperado.";
 }
 
+function isAuthExpired(error) {
+  const message = error?.message || String(error || "");
+  return error?.status === 401 || error?.code === "PGRST301"
+    || /JWT expired|invalid JWT|refresh token|Auth session missing/i.test(message);
+}
+
+// Si la sesión caducó a mitad de algo, se pide ingresar otra vez sin cerrar lo que estaba abierto
+// (por ejemplo, el formulario del pedido queda detrás y se puede enviar al volver).
+async function handleSessionLost() {
+  const { data } = await sb.auth.refreshSession().catch(() => ({ data: {} }));
+  if (data?.session) {
+    showToast("Tu sesión se renovó. Vuelve a intentarlo.");
+    return;
+  }
+  openLogin("Tu sesión se cerró. Ingresa de nuevo para continuar: no perderás lo que estabas haciendo.", {
+    type: "hash",
+    hash: location.hash,
+  });
+}
+
 async function withBusy(target, task) {
   const button = target.matches("button") ? target : target.querySelector("[type=submit]");
   if (button?.disabled) return undefined;
@@ -188,6 +269,10 @@ async function withBusy(target, task) {
     return await task();
   } catch (error) {
     console.error(error);
+    if (state.session && isAuthExpired(error)) {
+      handleSessionLost();
+      return undefined;
+    }
     showToast(errorMessage(error), true);
     return undefined;
   } finally {
@@ -246,6 +331,38 @@ function toggleFavorite(productId) {
     showToast("No se pudieron guardar tus favoritos en este navegador.", true);
   }
   renderProducts();
+  if (!els.storeView.classList.contains("hidden")) renderStorePage();
+}
+
+/* ---------------------------------------------------------------------
+   Tema claro / oscuro (se guarda en este dispositivo)
+   --------------------------------------------------------------------- */
+
+function currentTheme() {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+function setTheme(theme, save = true) {
+  const value = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = value;
+  const meta = $('meta[name="theme-color"]');
+  if (meta) meta.content = value === "dark" ? "#163a73" : "#0b2a5b";
+  if (save) {
+    try {
+      localStorage.setItem(THEME_KEY, value);
+    } catch {
+      // Sin almacenamiento (modo privado estricto): el tema dura hasta cerrar la página.
+    }
+  }
+  $$("[data-theme-switch]").forEach((input) => { input.checked = value === "dark"; });
+}
+
+function themeSwitch() {
+  return `
+    <label class="switch-row">
+      <span><strong>Tema oscuro</strong><small>Más cómodo de noche. Se recuerda en este dispositivo.</small></span>
+      <input type="checkbox" role="switch" data-theme-switch${currentTheme() === "dark" ? " checked" : ""} />
+    </label>`;
 }
 
 /* ---------------------------------------------------------------------
@@ -255,18 +372,18 @@ function toggleFavorite(productId) {
 async function loadSettings() {
   const { data, error } = await sb
     .from("platform_settings")
-    .select("commission_rate, payment_qr_path, payment_holder")
+    .select("commission_rate, payment_qr_path, payment_holder, min_price")
     .maybeSingle();
   if (error) {
     console.error(error);
   } else if (data) {
-    state.settings = { ...data, commission_rate: Number(data.commission_rate) };
+    state.settings = { ...data, commission_rate: Number(data.commission_rate), min_price: Number(data.min_price) };
   }
   applyRate();
 }
 
 async function loadPickupPoints() {
-  const { data, error } = await sb.from("pickup_points").select("name, schedule").order("id");
+  const { data, error } = await sb.from("pickup_points").select("id, name, schedule").order("id");
   if (error) console.error(error);
   state.pickupPoints = data || [];
 }
@@ -275,6 +392,10 @@ function applyRate() {
   $$("[data-rate]").forEach((element) => {
     element.textContent = ratePercent();
   });
+  $$("[data-min-price]").forEach((element) => {
+    element.textContent = minPriceText();
+  });
+  $("#publish-price").min = minPrice().toFixed(2);
   updateCalculator();
   updatePublishNet();
 }
@@ -289,8 +410,14 @@ function updateCalculator() {
 function updatePublishNet() {
   const price = Number($("#publish-price").value);
   const box = $("#publish-net");
+  box.classList.remove("net-warning");
   if (!price || price <= 0) {
-    box.textContent = `Comisión del ${ratePercent()} solo cuando vendes.`;
+    box.textContent = `Precio mínimo ${minPriceText()} · comisión del ${ratePercent()} solo cuando vendes.`;
+    return;
+  }
+  if (price < minPrice()) {
+    box.classList.add("net-warning");
+    box.textContent = minPriceMessage();
     return;
   }
   const fee = commissionFor(price);
@@ -310,7 +437,31 @@ async function loadCatalog() {
   }
   state.catalog = error ? state.catalog : data || [];
   state.catalogLoaded = true;
+  resolveCatalogReady();
   renderProducts();
+  if (!els.storeView.classList.contains("hidden")) renderStorePage();
+}
+
+// Tiendas con modo vendedor activo (la base de datos solo devuelve esas a los visitantes).
+async function loadStores() {
+  const { data, error } = await sb
+    .from("stores")
+    .select("seller_id, name, slogan, logo_path")
+    .order("updated_at", { ascending: false })
+    .limit(60);
+  if (error) console.error(error);
+  state.stores = (data || []).filter((store) => state.catalog.some((product) => product.seller_id === store.seller_id));
+  renderStoreStrip();
+}
+
+function renderStoreStrip() {
+  const strip = els.storeStrip;
+  strip.classList.toggle("hidden", state.stores.length === 0);
+  $("#store-strip-list").innerHTML = state.stores.map((store) => `
+    <a class="store-chip" href="#tienda/${escapeHtml(store.seller_id)}">
+      ${storeLogo(store.name, store.logo_path, "store-logo store-logo-sm")}
+      <span><strong>${escapeHtml(store.name)}</strong>${store.slogan ? `<small>${escapeHtml(store.slogan)}</small>` : ""}</span>
+    </a>`).join("");
 }
 
 function productImageUrl(path) {
@@ -318,7 +469,7 @@ function productImageUrl(path) {
 }
 
 function productCard(product, favorites) {
-  const style = CATEGORY_STYLE[product.category] || { emoji: "✨", tone: "sage" };
+  const style = CATEGORY_STYLE[product.category] || DEFAULT_STYLE;
   const id = escapeHtml(product.id);
   const isFavorite = favorites.includes(product.id);
   const isOwn = product.seller_id === uid();
@@ -337,7 +488,7 @@ function productCard(product, favorites) {
       </div>
       <div class="product-info">
         <div class="product-meta">
-          <span class="seller-line"><span class="verified" aria-label="Comunidad PUCE">✦</span>${escapeHtml(product.seller_name)}</span>
+          <a class="seller-line" href="#tienda/${escapeHtml(product.seller_id)}" title="Ver la tienda de ${escapeHtml(product.seller_name)}"><span class="verified" aria-label="Comunidad PUCE">✦</span><span>${escapeHtml(product.seller_name)}</span></a>
           <span>${product.pickup_point ? "Punto Link" : "Por coordinar"}</span>
         </div>
         <h3 title="${escapeHtml(product.name)}">${escapeHtml(product.name)}</h3>
@@ -360,7 +511,7 @@ function renderProducts() {
     return matchesCategory && searchable.includes(query);
   });
   const catalogIsEmpty = state.catalog.length === 0;
-  els.count.textContent = `${filtered.length} ${filtered.length === 1 ? "emprendimiento" : "emprendimientos"}`;
+  els.count.textContent = `${filtered.length} ${filtered.length === 1 ? "producto" : "productos"}`;
   $("#empty-title").textContent = catalogIsEmpty
     ? "Aún no hay publicaciones"
     : state.category === "Favoritos" && !query ? "Todavía no tienes favoritos" : "No encontramos resultados";
@@ -382,15 +533,222 @@ function selectCategory(category) {
 }
 
 /* ---------------------------------------------------------------------
-   Sesión (enlace o código por correo institucional)
+   Tienda del emprendedor: su perfil público con todo su catálogo
+   --------------------------------------------------------------------- */
+
+function socialLinks(store) {
+  return [
+    store.instagram ? [`https://www.instagram.com/${store.instagram}`, `Instagram · @${store.instagram}`] : null,
+    store.tiktok ? [`https://www.tiktok.com/@${store.tiktok}`, `TikTok · @${store.tiktok}`] : null,
+    store.facebook ? [`https://www.facebook.com/${store.facebook}`, `Facebook · ${store.facebook}`] : null,
+  ].filter(Boolean);
+}
+
+let storePageToken = 0;
+async function renderStorePage() {
+  const sellerId = state.storeViewId;
+  if (!sellerId) return;
+  const token = ++storePageToken;
+  const content = els.storeContent;
+  if (content.dataset.seller !== sellerId) content.innerHTML = '<div class="panel-loading">Cargando tienda…</div>';
+  const { data: store, error } = await sb.from("stores").select("*").eq("seller_id", sellerId).maybeSingle();
+  await Promise.all([catalogReady, pickupReady]);
+  if (token !== storePageToken) return;
+  content.dataset.seller = sellerId;
+  if (error || !store) {
+    if (error) console.error(error);
+    content.innerHTML = `
+      <a class="back-link" href="#explorar">← Volver al catálogo</a>
+      ${emptyPanel("Esta tienda no está disponible", "Puede que el emprendimiento haya pausado sus ventas.", '<a class="button button-dark" href="#explorar">Ver el catálogo</a>')}`;
+    return;
+  }
+  const products = state.catalog.filter((product) => product.seller_id === sellerId);
+  const reviews = products.reduce((sum, product) => sum + Number(product.reviews_count || 0), 0);
+  const rating = reviews
+    ? products.reduce((sum, product) => sum + Number(product.rating || 0) * Number(product.reviews_count || 0), 0) / reviews
+    : 0;
+  const points = state.pickupPoints.filter((point) => (store.pickup_point_ids || []).includes(point.id));
+  const socials = socialLinks(store);
+  const info = [
+    store.faculty ? ["Carrera o facultad", escapeHtml(store.faculty)] : null,
+    store.schedule ? ["Días y horarios", escapeHtml(store.schedule)] : null,
+    points.length ? ["Entrega en", points.map((point) => `${escapeHtml(point.name)}<small>${escapeHtml(point.schedule)}</small>`).join("")] : null,
+    socials.length ? ["Redes sociales", socials.map(([href, label]) => `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>`).join("")] : null,
+  ].filter(Boolean);
+  const favorites = getFavorites();
+  const about = store.description || info.length;
+  content.innerHTML = `
+    <a class="back-link" href="#explorar">← Volver al catálogo</a>
+    <section class="store-hero">
+      ${storeLogo(store.name, store.logo_path, "store-logo store-logo-lg")}
+      <div class="store-hero-copy">
+        <div class="eyebrow eyebrow-green">EMPRENDIMIENTO PUCE</div>
+        <h1>${escapeHtml(store.name)}</h1>
+        ${store.slogan ? `<p class="store-slogan">${escapeHtml(store.slogan)}</p>` : ""}
+        <div class="store-badges">
+          <span class="status-chip">${reviews ? `★ ${rating.toFixed(1)} · ${reviews} ${reviews === 1 ? "reseña" : "reseñas"}` : "Nuevo en Skill-Link"}</span>
+          <span class="status-chip">${products.length} ${products.length === 1 ? "producto" : "productos"}</span>
+        </div>
+      </div>
+      ${sellerId === uid() ? '<a class="button button-outline" href="#panel/tienda">Editar mi tienda</a>' : ""}
+    </section>
+    <div class="store-body${about ? "" : " store-body-full"}">
+      ${about ? `
+        <aside class="store-about">
+          ${store.description ? `<h2>Sobre el emprendimiento</h2><p class="store-description">${escapeHtml(store.description)}</p>` : ""}
+          ${info.length ? `<dl class="store-info">${info.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${value}</dd></div>`).join("")}</dl>` : ""}
+        </aside>` : ""}
+      <div class="store-catalog">
+        <h2>Catálogo</h2>
+        ${products.length
+          ? `<div class="product-grid store-grid">${products.map((product) => productCard(product, favorites)).join("")}</div>`
+          : '<p class="muted-line">Este emprendimiento todavía no tiene productos disponibles.</p>'}
+      </div>
+    </div>`;
+  document.title = `${store.name} | Skill-Link`;
+}
+
+function showStore(sellerId) {
+  const changed = state.storeViewId !== sellerId || els.storeView.classList.contains("hidden");
+  state.storeViewId = sellerId;
+  els.homeView.classList.add("hidden");
+  els.panelView.classList.add("hidden");
+  els.storeView.classList.remove("hidden");
+  if (changed) window.scrollTo(0, 0);
+  renderStorePage();
+}
+
+/* ---------------------------------------------------------------------
+   Sesión: código de 6 dígitos por correo institucional.
+   El correo trae solo el código, sin enlace: el filtro de seguridad del correo
+   PUCE abría el enlace antes que la persona y eso gastaba el código.
    --------------------------------------------------------------------- */
 
 function loginErrorMessage(error) {
   const message = error?.message || String(error || "");
-  if (/security purposes|after \d+ seconds/i.test(message)) return "Espera un minuto antes de pedir otro correo de acceso.";
-  if (/rate limit|too many/i.test(message)) return "Se alcanzó el límite de correos de acceso por hora. Inténtalo más tarde.";
+  const wait = message.match(/after (\d+) seconds?/i);
+  if (wait) return `Espera ${wait[1]} segundos antes de pedir otro código.`;
+  if (/security purposes/i.test(message)) return "Espera un minuto antes de pedir otro código.";
+  if (/rate limit|too many/i.test(message)) return "Se alcanzó el límite de correos de acceso. Inténtalo en unos minutos.";
   if (/database error saving new user/i.test(message)) return "Solo pueden crear cuenta los correos @puce.edu.ec.";
-  return message;
+  return errorMessage(error);
+}
+
+// El código pendiente se guarda en el navegador: si el celular recarga la página mientras
+// la persona copia el código en su app de correo, al volver sigue en la pantalla del código.
+function savedLogin() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LOGIN_KEY) || "null");
+    if (saved?.email && Date.now() - Number(saved.sentAt) < OTP_TTL_MS) return saved;
+  } catch {
+    // Almacenamiento no disponible o dañado.
+  }
+  clearSavedLogin();
+  return null;
+}
+
+function saveLogin() {
+  try {
+    localStorage.setItem(LOGIN_KEY, JSON.stringify({ ...state.login, pending: state.pendingAction }));
+  } catch {
+    // Sin almacenamiento: el código sirve igual mientras la página no se recargue.
+  }
+}
+
+function clearSavedLogin() {
+  try {
+    localStorage.removeItem(LOGIN_KEY);
+  } catch {
+    // Nada que borrar.
+  }
+}
+
+function setLoginError(message) {
+  const box = $("#login-error");
+  box.textContent = message;
+  box.classList.toggle("hidden", !message);
+}
+
+let resendTimer;
+function updateResendButton() {
+  const button = $("#login-resend");
+  if (!state.login || !els.loginDialog.open) window.clearInterval(resendTimer);
+  const wait = state.login ? Math.ceil((state.login.sentAt + RESEND_WAIT_MS - Date.now()) / 1000) : 0;
+  button.disabled = wait > 0;
+  button.textContent = wait > 0 ? `Reenviar código (${wait} s)` : "Reenviar código";
+}
+
+function showCodeStep(notice = "") {
+  const login = state.login;
+  $("#login-sent-to").textContent = login.email;
+  $("#login-status").innerHTML = `${notice ? `<strong>${escapeHtml(notice)}</strong><br />` : ""}`
+    + `Enviado a las ${escapeHtml(formatTime(login.sentAt))} · vence a las ${escapeHtml(formatTime(login.sentAt + OTP_TTL_MS))}.`;
+  setLoginError("");
+  showLoginStep("code");
+  const input = $("#login-code");
+  input.value = "";
+  window.clearInterval(resendTimer);
+  resendTimer = window.setInterval(updateResendButton, 1000);
+  window.setTimeout(() => {
+    updateResendButton();
+    input.focus();
+  }, 60);
+}
+
+async function sendCode(email, isResend = false) {
+  const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+  if (error) throw new Error(loginErrorMessage(error));
+  state.login = { email, sentAt: Date.now() };
+  saveLogin();
+  showCodeStep(isResend ? "Te enviamos un código nuevo. Usa el del correo más reciente: los anteriores ya no sirven." : "");
+}
+
+async function resendCode() {
+  const button = $("#login-resend");
+  if (button.disabled || !state.login) return;
+  button.disabled = true;
+  try {
+    await sendCode(state.login.email, true);
+  } catch (error) {
+    setLoginError(error.message);
+  } finally {
+    updateResendButton();
+  }
+}
+
+async function verifyCode() {
+  const login = state.login;
+  const input = $("#login-code");
+  const token = input.value.replace(/\D/g, "");
+  if (!login) {
+    showLoginStep("email");
+    return;
+  }
+  const expired = () => Date.now() - login.sentAt > OTP_TTL_MS;
+  if (token.length !== 6) {
+    setLoginError("Escribe los 6 dígitos del código.");
+    return;
+  }
+  if (expired()) {
+    setLoginError("El código venció. Solicita uno nuevo.");
+    return;
+  }
+  setLoginError("");
+  const { error } = await sb.auth.verifyOtp({ email: login.email, token, type: "email" });
+  if (error) {
+    if (expired()) {
+      setLoginError("El código venció. Solicita uno nuevo.");
+    } else if (error.status === 403 || /expired|invalid/i.test(error.message)) {
+      setLoginError(`Código incorrecto. Revisa que sea el del correo más reciente (enviado a las ${formatTime(login.sentAt)}).`);
+    } else {
+      setLoginError(loginErrorMessage(error));
+    }
+    input.select();
+    return;
+  }
+  // La sesión queda abierta: onAuthStateChange cierra el diálogo y retoma lo pendiente.
+  state.login = null;
+  clearSavedLogin();
 }
 
 async function initAuth() {
@@ -406,9 +764,16 @@ async function initAuth() {
   if (AUTH_REDIRECT?.ok && data.session) {
     onSignedIn();
   } else if (AUTH_REDIRECT && !AUTH_REDIRECT.ok) {
-    showToast(AUTH_REDIRECT.code === "otp_expired"
-      ? "El enlace de acceso expiró o ya se usó. Pide uno nuevo."
-      : "No se pudo ingresar con ese enlace. Pide uno nuevo.", true);
+    showToast("Ese enlace ya no sirve. Ingresa con el código de 6 dígitos que llega a tu correo.", true);
+  }
+  const saved = savedLogin();
+  if (data.session) {
+    clearSavedLogin();
+  } else if (saved) {
+    state.pendingAction = saved.pending || null;
+    state.login = { email: saved.email, sentAt: Number(saved.sentAt) };
+    showCodeStep();
+    if (!els.loginDialog.open) els.loginDialog.showModal();
   }
   sb.auth.onAuthStateChange((event, session) => {
     // Se difiere para no llamar a Supabase dentro del callback (evita bloqueos).
@@ -427,24 +792,36 @@ async function handleAuthChange(event, session) {
   renderProducts();
   if (nextUser) {
     onSignedIn();
+  } else if (previousUser && !state.loggingOut) {
+    // La sesión se cerró sola (caducó): se pide ingresar otra vez y luego se vuelve al mismo lugar.
+    const hash = location.hash;
+    if (hash.startsWith("#panel")) history.replaceState(null, "", location.pathname);
+    openLogin("Tu sesión se cerró. Ingresa de nuevo para continuar donde estabas.", { type: "hash", hash });
   } else if (location.hash.startsWith("#panel")) {
     location.hash = "";
   }
+  state.loggingOut = false;
   route();
 }
 
 async function setSession(session) {
   state.session = session;
   state.profile = null;
+  state.store = null;
   if (session) await loadProfile();
   updateHeader();
   refreshBadge();
 }
 
 async function loadProfile() {
-  const { data, error } = await sb.from("profiles").select("*").eq("id", uid()).maybeSingle();
-  if (error) console.error(error);
-  state.profile = data || null;
+  const [profileResult, storeResult] = await Promise.all([
+    sb.from("profiles").select("*").eq("id", uid()).maybeSingle(),
+    sb.from("stores").select("*").eq("seller_id", uid()).maybeSingle(),
+  ]);
+  if (profileResult.error) console.error(profileResult.error);
+  if (storeResult.error) console.error(storeResult.error);
+  state.profile = profileResult.data || null;
+  state.store = storeResult.data || null;
 }
 
 function initials() {
@@ -459,6 +836,7 @@ function updateHeader() {
   $("#open-panel").classList.toggle("hidden", !loggedIn);
   $("#avatar-initials").textContent = loggedIn ? initials() : "SL";
   $("#admin-tab").classList.toggle("hidden", state.profile?.role !== "admin");
+  $$("[data-seller-tab]").forEach((tab) => tab.classList.toggle("hidden", !isSeller()));
 }
 
 async function refreshBadge() {
@@ -479,8 +857,18 @@ async function refreshBadge() {
 function openLogin(reason, after) {
   if (!requireConfigured()) return;
   state.pendingAction = after || null;
-  $("#login-reason").textContent = reason || "Te enviaremos un código de acceso a tu correo. No necesitas contraseña.";
-  showLoginStep("email");
+  $("#login-reason").textContent = reason || "Te enviaremos un código de 6 dígitos a tu correo. No necesitas contraseña.";
+  // Si ya hay un código vigente, se vuelve a esa pantalla en vez de pedir otro.
+  if (!state.login || Date.now() - state.login.sentAt > OTP_TTL_MS) {
+    const saved = savedLogin();
+    state.login = saved ? { email: saved.email, sentAt: Number(saved.sentAt) } : null;
+  }
+  if (state.login) {
+    saveLogin();
+    showCodeStep();
+  } else {
+    showLoginStep("email");
+  }
   if (!els.loginDialog.open) els.loginDialog.showModal();
 }
 
@@ -489,17 +877,44 @@ function showLoginStep(step) {
   $("#login-code-form").classList.toggle("hidden", step !== "code");
 }
 
-function onSignedIn() {
+function useOtherEmail() {
+  const email = state.login?.email || "";
+  state.login = null;
+  clearSavedLogin();
+  window.clearInterval(resendTimer);
+  showLoginStep("email");
+  const input = $("#login-email-form").elements.email;
+  input.value = email;
+  input.focus();
+}
+
+async function runPendingAction(action) {
+  if (action?.type === "order" && action.productId) {
+    await catalogReady;
+    openOrder(action.productId);
+    return true;
+  }
+  if (action?.type === "publish") {
+    openProductDialog();
+    return true;
+  }
+  if (action?.type === "hash" && typeof action.hash === "string") {
+    if (location.hash !== action.hash) location.hash = action.hash;
+    return true;
+  }
+  return false;
+}
+
+async function onSignedIn() {
   if (els.loginDialog.open) els.loginDialog.close();
+  state.login = null;
+  clearSavedLogin();
   const pending = state.pendingAction;
   state.pendingAction = null;
-  if (pending) {
-    pending();
-    return;
-  }
+  if (pending && await runPendingAction(pending)) return;
   if (!state.profile?.full_name) {
-    showToast("¡Bienvenido! Completa tu perfil para empezar.");
-    location.hash = "#panel/perfil";
+    showToast("¡Bienvenido! Escribe tu nombre para empezar.");
+    location.hash = "#panel/cuenta";
   } else {
     showToast(`¡Hola, ${state.profile.full_name.split(" ")[0]}!`);
   }
@@ -512,14 +927,23 @@ function onSignedIn() {
 const PANEL_TABS = {
   compras: renderPurchases,
   ventas: renderSales,
-  publicaciones: renderListings,
+  tienda: renderMyStore,
   comisiones: renderCommissions,
-  perfil: renderProfile,
+  cuenta: renderAccount,
   admin: renderAdmin,
 };
+const DEFAULT_TITLE = document.title;
 
 function route() {
   const hash = location.hash;
+  if (hash.startsWith("#tienda/")) {
+    const sellerId = decodeURIComponent(hash.slice("#tienda/".length));
+    if (isConfigured && UUID_RE.test(sellerId)) {
+      showStore(sellerId);
+      return;
+    }
+  }
+  document.title = DEFAULT_TITLE;
   if (hash.startsWith("#panel")) {
     if (!isConfigured) {
       history.replaceState(null, "", location.pathname);
@@ -531,10 +955,11 @@ function route() {
       const target = hash;
       history.replaceState(null, "", location.pathname);
       showHome();
-      openLogin("Ingresa con tu correo PUCE para ver tu panel.", () => { location.hash = target; });
+      openLogin("Ingresa con tu correo PUCE para ver tu panel.", { type: "hash", hash: target });
       return;
     }
-    const tab = hash.split("/")[1] || state.panelTab;
+    const requested = hash.split("/")[1] || state.panelTab;
+    const tab = PANEL_ALIASES[requested] || requested;
     showPanel(PANEL_TABS[tab] ? tab : "compras");
     return;
   }
@@ -545,6 +970,7 @@ function showHome() {
   const wasHidden = els.homeView.classList.contains("hidden");
   els.homeView.classList.remove("hidden");
   els.panelView.classList.add("hidden");
+  els.storeView.classList.add("hidden");
   if (!wasHidden) return;
   const id = location.hash.length > 1 ? decodeURIComponent(location.hash.slice(1)) : "";
   const target = id && /^[\w-]+$/.test(id) ? document.getElementById(id) : null;
@@ -554,9 +980,11 @@ function showHome() {
 
 function showPanel(tab) {
   if (tab === "admin" && state.profile?.role !== "admin") tab = "compras";
+  if (SELLER_TABS.includes(tab) && !isSeller()) tab = "cuenta";
   const changed = state.panelTab !== tab || els.panelView.classList.contains("hidden");
   state.panelTab = tab;
   els.homeView.classList.add("hidden");
+  els.storeView.classList.add("hidden");
   els.panelView.classList.remove("hidden");
   $$(".panel-tab").forEach((link) => {
     const active = link.dataset.tab === tab;
@@ -765,19 +1193,47 @@ async function renderSales() {
     </div>`;
   const warning = state.profile?.payment_qr_path
     ? ""
-    : '<p class="order-note note-attention">Aún no subiste tu QR de cobro de Banco Pichincha. <a href="#panel/perfil">Súbelo aquí</a> para que te puedan pagar.</p>';
+    : '<p class="order-note note-attention">Aún no subiste tu QR de cobro de Banco Pichincha. <a href="#panel/tienda">Súbelo en Mi tienda</a> para que te puedan pagar.</p>';
   const head = sectionHead("Mis ventas", "Al entregar, escanea el QR del comprador: así la venta queda registrada.");
   if (!data.length) {
-    return head + warning + emptyPanel("Todavía no tienes pedidos", "Cuando alguien pida uno de tus productos, aparecerá aquí.", '<button class="button button-dark" type="button" data-action="new-listing">Publicar algo</button>');
+    return head + warning + emptyPanel("Todavía no tienes pedidos", "Cuando alguien pida uno de tus productos, aparecerá aquí.", '<a class="button button-dark" href="#panel/tienda">Ir a mi tienda</a>');
   }
   return head + stats + warning + groupOrders(data, "seller");
 }
 
 /* ---------------------------------------------------------------------
-   Panel · publicaciones
+   Panel · mi tienda (perfil del emprendimiento + catálogo)
    --------------------------------------------------------------------- */
 
-async function renderListings() {
+function listingRow(product) {
+  const style = CATEGORY_STYLE[product.category] || DEFAULT_STYLE;
+  const id = escapeHtml(product.id);
+  const belowMin = Number(product.price) < minPrice();
+  const thumb = product.image_path
+    ? `<img src="${escapeHtml(productImageUrl(product.image_path))}" alt="" loading="lazy" />`
+    : `<span aria-hidden="true">${style.emoji}</span>`;
+  return `
+    <article class="listing-row">
+      <div class="listing-thumb tone-${style.tone}">${thumb}</div>
+      <div class="listing-info">
+        <h3>${escapeHtml(product.name)}</h3>
+        <p>${escapeHtml(product.category)} · ${formatPrice(product.price)} · recibes ${formatPrice(product.price - commissionFor(product.price))}</p>
+        ${belowMin ? `<small class="listing-warning">Pausado: el precio es menor al mínimo de ${minPriceText()}. Edítalo para volver a mostrarlo.</small>` : ""}
+      </div>
+      <span class="status-chip ${product.active ? "status-completado" : "status-cancelado"}">${product.active ? "Activo" : "Pausado"}</span>
+      <div class="listing-actions">
+        <button class="button button-outline" type="button" data-action="edit-listing" data-id="${id}">Editar</button>
+        <button class="button button-outline" type="button" data-action="toggle-listing" data-id="${id}">${product.active ? "Pausar" : "Activar"}</button>
+        <button class="button button-ghost" type="button" data-action="delete-listing" data-id="${id}">Eliminar</button>
+      </div>
+    </article>`;
+}
+
+async function renderMyStore() {
+  await loadProfile();
+  updateHeader();
+  const profile = state.profile;
+  const store = state.store;
   const { data, error } = await sb
     .from("products")
     .select("*")
@@ -786,39 +1242,149 @@ async function renderListings() {
   if (error) throw error;
   panelData.products.clear();
   data.forEach((product) => panelData.products.set(product.id, product));
+  const qrUrl = await signedQrUrl(profile?.payment_qr_path);
+  const selected = store?.pickup_point_ids || [];
+  const points = state.pickupPoints.map((point) => `
+    <label class="checkbox-label"><input type="checkbox" name="points" value="${escapeHtml(point.id)}"${selected.includes(point.id) ? " checked" : ""} /> ${escapeHtml(point.name)} <small>${escapeHtml(point.schedule)}</small></label>`).join("");
+  const field = (name) => escapeHtml(store?.[name] || "");
+  const ready = Boolean(store && profile?.payment_qr_path && profile?.full_name);
+
   const head = sectionHead(
-    "Mis publicaciones",
-    `Publicar es gratis. Solo se genera una comisión del ${ratePercent()} por venta concretada.`,
-    '<button class="button button-dark" type="button" data-action="new-listing">＋ Nueva publicación</button>',
+    "Mi tienda",
+    "Tu perfil de emprendimiento y tu catálogo en un solo lugar. Lo completas una vez y luego solo agregas o editas productos.",
+    store ? `<a class="button button-outline" href="#tienda/${escapeHtml(uid())}">Ver mi tienda ↗</a>` : "",
   );
-  const ready = state.profile?.full_name && state.profile?.payment_qr_path;
+  const intro = store
+    ? ""
+    : '<p class="order-note note-attention">Completa el perfil de tu emprendimiento y sube tu QR de cobro para empezar a vender.</p>';
+
+  const form = `
+    <form class="panel-form" id="store-form">
+      <div class="panel-form-grid">
+        <div class="panel-card">
+          <h3>Perfil del emprendimiento</h3>
+          <div class="logo-field">
+            ${storeLogo(store?.name || profile?.full_name, store?.logo_path, "store-logo store-logo-md")}
+            <label>${store?.logo_path ? "Cambiar logo" : "Logo"} (PNG con fondo transparente si puedes · máx. 2 MB)<input name="logo" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+          </div>
+          <label>Nombre del emprendimiento<input name="name" required minlength="2" maxlength="60" value="${field("name")}" placeholder="Ej. Ruby Craft" /></label>
+          <label>Eslogan (opcional)<input name="slogan" maxlength="90" value="${field("slogan")}" placeholder="Una frase corta que resuma tu emprendimiento" /></label>
+          <label>Descripción<textarea name="description" rows="4" maxlength="600" placeholder="Quién eres y qué ofreces">${field("description")}</textarea></label>
+        </div>
+        <div class="panel-card">
+          <h3>Información adicional</h3>
+          <label>Carrera o facultad (opcional: solo si quieres mostrarla)<input name="faculty" maxlength="80" value="${field("faculty")}" placeholder="Ej. Administración de Empresas" /></label>
+          <label>Días y horarios disponibles<input name="schedule" maxlength="120" value="${field("schedule")}" placeholder="Ej. Lunes a jueves, de 10:00 a 14:00" /></label>
+          <fieldset class="point-picker"><legend>Puntos Link donde entregas</legend>${points || '<p class="help-text">Todavía no hay Puntos Link configurados.</p>'}</fieldset>
+          <label>Instagram (opcional)<input name="instagram" maxlength="80" value="${field("instagram")}" placeholder="@tuemprendimiento" autocapitalize="off" spellcheck="false" /></label>
+          <label>TikTok (opcional)<input name="tiktok" maxlength="80" value="${field("tiktok")}" placeholder="@tuemprendimiento" autocapitalize="off" spellcheck="false" /></label>
+          <label>Facebook (opcional)<input name="facebook" maxlength="120" value="${field("facebook")}" placeholder="Nombre de usuario de tu página" autocapitalize="off" spellcheck="false" /></label>
+        </div>
+        <div class="panel-card panel-card-wide">
+          <h3>QR de cobro · Banco Pichincha</h3>
+          <p class="help-text">Lo necesitas para vender. Los compradores lo escanean desde su app para pagarte directamente. Solo lo ve quien tiene un pedido aceptado contigo.</p>
+          <div class="qr-row">
+            <div class="qr-preview">${qrUrl ? `<img src="${escapeHtml(qrUrl)}" alt="Tu QR de cobro" />` : "<span>Sin QR todavía</span>"}</div>
+            <div class="qr-fields">
+              <label>${profile?.payment_qr_path ? "Reemplazar imagen del QR" : "Imagen de tu QR (PNG, JPG o WebP · máx. 2 MB)"}<input name="qr" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+              <label>Titular de la cuenta<input name="holder" maxlength="60" value="${escapeHtml(profile?.payment_holder || "")}" placeholder="Nombre que aparece al pagar" /></label>
+              <details class="help-details">
+                <summary>¿Cómo obtengo mi QR?</summary>
+                <ol>
+                  <li>Abre tu app de Banco Pichincha (Banca Móvil o DeUna).</li>
+                  <li>Busca la opción para <strong>cobrar con QR</strong> y genera tu código.</li>
+                  <li>Guarda la imagen (captura de pantalla recortada) y súbela aquí.</li>
+                  <li>Escribe el titular tal como aparece al pagar, para que el comprador pueda verificarlo.</li>
+                </ol>
+              </details>
+            </div>
+          </div>
+        </div>
+      </div>
+      <button class="button button-dark" type="submit">${store ? "Guardar cambios de la tienda" : "Crear mi tienda"} <span>↗</span></button>
+    </form>`;
+
+  const catalogHead = `
+    <div class="panel-section-head catalog-head">
+      <div>
+        <h2>Catálogo de productos · ${data.length}</h2>
+        <p>Cada producto tiene su propio precio (mínimo ${minPriceText()}). Para cambiar un precio, edita el producto: no hace falta publicarlo de nuevo.</p>
+      </div>
+      <button class="button button-dark" type="button" data-action="new-listing"${ready ? "" : " disabled"}>＋ Agregar producto</button>
+    </div>`;
   const warning = ready
     ? ""
-    : '<p class="order-note note-attention">Para publicar necesitas tu nombre y tu QR de cobro de Banco Pichincha. <a href="#panel/perfil">Completa tu perfil</a>.</p>';
-  if (!data.length) {
-    return head + warning + emptyPanel("Aún no publicaste nada", "Muestra tus productos o servicios a toda la comunidad PUCE.");
+    : '<p class="order-note note-attention">Guarda tu tienda y tu QR de cobro para poder agregar productos.</p>';
+  const list = data.length
+    ? `<div class="listing-list">${data.map(listingRow).join("")}</div>`
+    : emptyPanel("Tu catálogo está vacío", "Agrega tus productos o servicios, cada uno con su foto, su descripción y su precio.");
+  return head + intro + form + catalogHead + warning + list;
+}
+
+async function saveStore(form) {
+  const values = new FormData(form);
+  const text = (name, max) => String(values.get(name) || "").trim().replace(/\s+/g, " ").slice(0, max);
+  const name = text("name", 60);
+  if (name.length < 2) throw new Error("Escribe el nombre de tu emprendimiento.");
+  const handles = {};
+  for (const [key, pattern, label] of [
+    ["instagram", /^[A-Za-z0-9._]{1,30}$/, "Instagram"],
+    ["tiktok", /^[A-Za-z0-9._]{1,30}$/, "TikTok"],
+    ["facebook", /^[A-Za-z0-9.-]{1,80}$/, "Facebook"],
+  ]) {
+    const value = cleanHandle(values.get(key));
+    if (value && !pattern.test(value)) throw new Error(`El usuario de ${label} no es válido. Escribe solo el nombre de usuario.`);
+    handles[key] = value || null;
   }
-  const rows = data.map((product) => {
-    const style = CATEGORY_STYLE[product.category] || { emoji: "✨", tone: "sage" };
-    const id = escapeHtml(product.id);
-    const thumb = product.image_path
-      ? `<img src="${escapeHtml(productImageUrl(product.image_path))}" alt="" loading="lazy" />`
-      : `<span aria-hidden="true">${style.emoji}</span>`;
-    return `
-      <article class="listing-row">
-        <div class="listing-thumb tone-${style.tone}">${thumb}</div>
-        <div class="listing-info">
-          <h3>${escapeHtml(product.name)}</h3>
-          <p>${escapeHtml(product.category)} · ${formatPrice(product.price)} · recibes ${formatPrice(product.price - commissionFor(product.price))}</p>
-        </div>
-        <span class="status-chip ${product.active ? "status-completado" : "status-cancelado"}">${product.active ? "Activa" : "Pausada"}</span>
-        <div class="listing-actions">
-          <button class="button button-outline" type="button" data-action="toggle-listing" data-id="${id}">${product.active ? "Pausar" : "Activar"}</button>
-          <button class="button button-ghost" type="button" data-action="delete-listing" data-id="${id}">Eliminar</button>
-        </div>
-      </article>`;
-  }).join("");
-  return head + warning + `<div class="listing-list">${rows}</div>`;
+  const description = String(values.get("description") || "").trim().slice(0, 600);
+  const storeUpdate = {
+    name,
+    slogan: text("slogan", 90) || null,
+    description: description || null,
+    faculty: text("faculty", 80) || null,
+    schedule: text("schedule", 120) || null,
+    pickup_point_ids: values.getAll("points").map(Number).filter(Number.isInteger),
+    ...handles,
+  };
+  const profileUpdate = { payment_holder: text("holder", 60) || null };
+  const uploads = [];   // archivos subidos que se borran si algo falla
+  const upload = async (bucket, file, prefix, maxBytes) => {
+    const extension = validateImage(file, maxBytes);
+    const path = `${uid()}/${prefix}-${Date.now()}.${extension}`;
+    const { error } = await sb.storage.from(bucket).upload(path, file, { contentType: file.type });
+    if (error) throw error;
+    uploads.push({ bucket, path });
+    return path;
+  };
+  const oldLogo = state.store?.logo_path;
+  const oldQr = state.profile?.payment_qr_path;
+  try {
+    const logo = values.get("logo");
+    if (logo && logo.size) storeUpdate.logo_path = await upload("product-images", logo, "logo", 2 * 1048576);
+    const qr = values.get("qr");
+    if (qr && qr.size) profileUpdate.payment_qr_path = await upload("payment-qr", qr, "qr", 2 * 1048576);
+
+    const { data: store, error: storeError } = state.store
+      ? await sb.from("stores").update(storeUpdate).eq("seller_id", uid()).select().maybeSingle()
+      : await sb.from("stores").insert(storeUpdate).select().maybeSingle();
+    if (storeError || !store) throw storeError || new Error("No se pudo guardar tu tienda.");
+    state.store = store;
+    if (storeUpdate.logo_path) uploads.splice(uploads.findIndex((item) => item.path === storeUpdate.logo_path), 1);
+
+    const { data: profile, error: profileError } = await sb.from("profiles").update(profileUpdate).eq("id", uid()).select().maybeSingle();
+    if (profileError || !profile) throw profileError || new Error("No se pudo guardar tu QR de cobro.");
+    state.profile = profile;
+    uploads.length = 0;
+  } catch (error) {
+    if (uploads.length) await Promise.all(uploads.map(({ bucket, path }) => sb.storage.from(bucket).remove([path])));
+    throw error;
+  }
+  if (storeUpdate.logo_path && oldLogo && oldLogo !== storeUpdate.logo_path) sb.storage.from("product-images").remove([oldLogo]);
+  if (profileUpdate.payment_qr_path && oldQr && oldQr !== profileUpdate.payment_qr_path) sb.storage.from("payment-qr").remove([oldQr]);
+  showToast(state.profile.payment_qr_path ? "Tienda guardada. ¡Ya puedes agregar productos!" : "Tienda guardada. Sube tu QR de cobro para poder vender.");
+  renderPanelTab();
+  await loadCatalog();
+  loadStores();
 }
 
 /* ---------------------------------------------------------------------
@@ -913,72 +1479,112 @@ async function signedQrUrl(path, options) {
   return data.signedUrl;
 }
 
-async function renderProfile() {
+/* ---------------------------------------------------------------------
+   Panel · cuenta (datos, modo vendedor y configuración)
+   --------------------------------------------------------------------- */
+
+async function renderAccount() {
   await loadProfile();
   updateHeader();
   const profile = state.profile;
   if (!profile) {
     return emptyPanel("No encontramos tu perfil", "Cierra sesión y vuelve a ingresar. Si el problema sigue, contacta a soporte.");
   }
-  const qrUrl = await signedQrUrl(profile.payment_qr_path);
-  return sectionHead("Perfil y QR de cobro", "Tus datos se muestran solo a las personas con las que tienes un pedido.") + `
-    <form class="panel-form" id="profile-form">
-      <div class="panel-form-grid">
+  const seller = isSeller();
+  const sellerText = seller
+    ? "Tu tienda está activa y tus productos aparecen en el catálogo."
+    : `Actívalo para crear tu tienda y publicar tus productos. Publicar es gratis: solo pagas una comisión del ${ratePercent()} cuando vendes.`;
+  const sellerLinks = seller
+    ? `<p class="account-links"><a class="text-button" href="#panel/tienda">Ir a mi tienda</a>${state.store ? ` · <a class="text-button" href="#tienda/${escapeHtml(uid())}">Verla como comprador</a>` : ""}</p>`
+    : "";
+  return sectionHead("Cuenta", "Tus datos, la opción para vender y la configuración de la aplicación.") + `
+    <div class="panel-form-grid">
+      <form class="panel-card" id="account-form">
+        <h3>Tus datos</h3>
+        <label>Nombre completo<input name="full_name" required minlength="3" maxlength="60" value="${escapeHtml(profile.full_name)}" placeholder="Ej. Camila Ajila" autocomplete="name" /></label>
+        <label>Correo institucional<input value="${escapeHtml(profile.email)}" disabled /></label>
+        <label>WhatsApp (opcional)<input name="phone" maxlength="16" pattern="[0-9+ ]{7,16}" value="${escapeHtml(profile.phone || "")}" placeholder="0991234567" inputmode="tel" autocomplete="tel" /></label>
+        <p class="help-text">Tu nombre, correo y WhatsApp solo los ven las personas con las que tienes un pedido.</p>
+        <button class="button button-dark" type="submit">Guardar datos</button>
+      </form>
+      <div class="panel-stack">
         <div class="panel-card">
-          <h3>Tus datos</h3>
-          <label>Nombre completo<input name="full_name" required minlength="3" maxlength="60" value="${escapeHtml(profile.full_name)}" placeholder="Ej. Camila Ajila" autocomplete="name" /></label>
-          <label>Correo institucional<input value="${escapeHtml(profile.email)}" disabled /></label>
-          <label>WhatsApp (opcional)<input name="phone" maxlength="16" pattern="[0-9+ ]{7,16}" value="${escapeHtml(profile.phone || "")}" placeholder="0991234567" inputmode="tel" autocomplete="tel" /></label>
+          <h3>Vender en Skill-Link</h3>
+          <label class="switch-row">
+            <span><strong>Quiero vender</strong><small>${escapeHtml(sellerText)}</small></span>
+            <input type="checkbox" role="switch" id="seller-switch"${seller ? " checked" : ""} />
+          </label>
+          ${sellerLinks}
         </div>
         <div class="panel-card">
-          <h3>QR de cobro · Banco Pichincha</h3>
-          <p class="help-text">Lo necesitas para vender. Los compradores lo escanean desde su app para pagarte directamente.</p>
-          <div class="qr-preview">${qrUrl ? `<img src="${escapeHtml(qrUrl)}" alt="Tu QR de cobro" />` : "<span>Sin QR todavía</span>"}</div>
-          <label>${profile.payment_qr_path ? "Reemplazar imagen del QR" : "Imagen de tu QR (PNG, JPG o WebP · máx. 2 MB)"}<input name="qr" type="file" accept="image/jpeg,image/png,image/webp" /></label>
-          <label>Titular de la cuenta<input name="holder" maxlength="60" value="${escapeHtml(profile.payment_holder || "")}" placeholder="Nombre que aparece al pagar" /></label>
-          <details class="help-details">
-            <summary>¿Cómo obtengo mi QR?</summary>
-            <ol>
-              <li>Abre tu app de Banco Pichincha (Banca Móvil o DeUna).</li>
-              <li>Busca la opción para <strong>cobrar con QR</strong> y genera tu código.</li>
-              <li>Guarda la imagen (captura de pantalla recortada) y súbela aquí.</li>
-              <li>Escribe el titular tal como aparece al pagar, para que el comprador pueda verificarlo.</li>
-            </ol>
-          </details>
+          <h3>Configuración</h3>
+          ${themeSwitch()}
         </div>
       </div>
-      <button class="button button-dark" type="submit">Guardar perfil <span>↗</span></button>
-    </form>`;
+    </div>`;
 }
 
-async function saveProfile(form) {
+async function saveAccount(form) {
   const values = new FormData(form);
   const fullName = String(values.get("full_name") || "").trim().replace(/\s+/g, " ");
   const phone = String(values.get("phone") || "").trim();
-  const holder = String(values.get("holder") || "").trim();
   if (fullName.length < 3) throw new Error("Escribe tu nombre completo.");
   if (phone && !/^[0-9+ ]{7,16}$/.test(phone)) throw new Error("El número de WhatsApp no es válido.");
-  const update = { full_name: fullName, phone: phone || null, payment_holder: holder || null };
-  const file = values.get("qr");
-  const oldPath = state.profile?.payment_qr_path;
-  let newPath = null;
-  if (file && file.size) {
-    const extension = validateImage(file, 2 * 1048576);
-    newPath = `${uid()}/qr-${Date.now()}.${extension}`;
-    const { error } = await sb.storage.from("payment-qr").upload(newPath, file, { contentType: file.type });
-    if (error) throw error;
-    update.payment_qr_path = newPath;
-  }
-  const { data, error } = await sb.from("profiles").update(update).eq("id", uid()).select().maybeSingle();
-  if (error || !data) {
-    if (newPath) await sb.storage.from("payment-qr").remove([newPath]);
-    throw error || new Error("No se pudo guardar tu perfil.");
-  }
-  if (newPath && oldPath && oldPath !== newPath) sb.storage.from("payment-qr").remove([oldPath]);
+  const { data, error } = await sb
+    .from("profiles")
+    .update({ full_name: fullName, phone: phone || null })
+    .eq("id", uid())
+    .select()
+    .maybeSingle();
+  if (error || !data) throw error || new Error("No se pudieron guardar tus datos.");
   state.profile = data;
   updateHeader();
-  showToast(data.payment_qr_path ? "Perfil guardado. ¡Ya puedes publicar!" : "Perfil guardado. Sube tu QR de cobro para poder vender.");
-  showPanel("perfil");
+  $("#panel-greeting").textContent = `Hola, ${fullName.split(" ")[0]}`;
+  showToast("Datos guardados.");
+}
+
+async function setSellerFlag(value) {
+  const { data, error } = await sb.from("profiles").update({ is_seller: value }).eq("id", uid()).select().maybeSingle();
+  if (error || !data) throw error || new Error("No se pudo cambiar el modo vendedor.");
+  state.profile = data;
+  updateHeader();
+}
+
+// «Quiero vender»: todos entran como compradores y activan la venta desde aquí.
+async function toggleSeller(input) {
+  const wantsToSell = input.checked;
+  input.disabled = true;
+  try {
+    if (wantsToSell) {
+      if (!state.profile?.full_name) throw new Error("Primero escribe y guarda tu nombre completo.");
+      await setSellerFlag(true);
+      showToast("Modo vendedor activado. Completa el perfil de tu emprendimiento.");
+      location.hash = "#panel/tienda";
+    } else {
+      const [ordersResult, commissionsResult] = await Promise.all([
+        sb.from("orders").select("id", { count: "exact", head: true }).eq("seller_id", uid()).in("status", ["pendiente", "aceptado"]),
+        sb.from("commissions").select("id", { count: "exact", head: true }).eq("seller_id", uid()).in("status", ["pendiente", "en_revision"]),
+      ]);
+      if (ordersResult.error || commissionsResult.error) throw ordersResult.error || commissionsResult.error;
+      if (ordersResult.count) throw new Error("Tienes pedidos en curso. Entrégalos o cancélalos antes de dejar de vender.");
+      if (commissionsResult.count) throw new Error("Tienes comisiones por pagar o en revisión. Págalas antes de dejar de vender.");
+      if (!window.confirm("Tu tienda y tus productos dejarán de verse en el catálogo. Puedes volver a activarla cuando quieras. ¿Dejar de vender?")) {
+        input.checked = true;
+        return;
+      }
+      await setSellerFlag(false);
+      showToast("Modo vendedor desactivado. Tu tienda ya no aparece en el catálogo.");
+      renderPanelTab();
+    }
+    await loadCatalog();
+    loadStores();
+  } catch (error) {
+    console.error(error);
+    input.checked = !wantsToSell;
+    showToast(errorMessage(error), true);
+  } finally {
+    input.disabled = false;
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -1056,6 +1662,8 @@ async function renderAdmin() {
           <h3>Comisión por venta concretada</h3>
           <p class="help-text">Rango aprobado en el modelo de negocio: 8% a 10%. Se aplica a las ventas que se registren desde ahora.</p>
           <label>Porcentaje<select name="rate">${rateOptions}</select></label>
+          <label>Precio mínimo de venta (USD)<input name="min_price" type="number" min="0.01" max="1000" step="0.01" required inputmode="decimal" value="${escapeHtml(Number(settings.min_price || 1).toFixed(2))}" /></label>
+          <p class="help-text">Ningún producto puede publicarse por menos. Si lo subes, los productos más baratos quedan pausados hasta que su dueño corrija el precio.</p>
           <label>Titular de la cuenta de Skill-Link<input name="holder" maxlength="60" value="${escapeHtml(settings.payment_holder || "")}" placeholder="Nombre que aparece al pagar" /></label>
         </div>
         <div class="panel-card">
@@ -1083,8 +1691,12 @@ async function saveAdminSettings(form) {
   const values = new FormData(form);
   const rate = Number(values.get("rate"));
   if (![0.08, 0.09, 0.1].includes(rate)) throw new Error("La comisión debe estar entre 8% y 10%.");
+  const newMin = Math.round(Number(values.get("min_price")) * 100) / 100;
+  if (!Number.isFinite(newMin) || newMin < 0.01 || newMin > 1000) throw new Error("El precio mínimo debe estar entre $0.01 y $1000.");
+  const minRaised = newMin > minPrice();
   const update = {
     commission_rate: rate,
+    min_price: newMin,
     payment_holder: String(values.get("holder") || "").trim() || null,
     updated_at: new Date().toISOString(),
   };
@@ -1105,8 +1717,11 @@ async function saveAdminSettings(form) {
   }
   if (newPath && oldPath && oldPath !== newPath) sb.storage.from("payment-qr").remove([oldPath]);
   await loadSettings();
-  showToast("Configuración guardada.");
+  showToast(minRaised
+    ? `Configuración guardada. Los productos de menos de ${minPriceText()} quedaron pausados hasta que se corrijan.`
+    : "Configuración guardada.");
   renderPanelTab();
+  if (minRaised) loadCatalog().then(loadStores);
 }
 
 /* ---------------------------------------------------------------------
@@ -1136,7 +1751,7 @@ function renderQr(container, text) {
     text,
     width: 220,
     height: 220,
-    colorDark: "#1f2a22",
+    colorDark: "#0b2a5b",
     colorLight: "#ffffff",
     correctLevel: window.QRCode.CorrectLevel.M,
   });
@@ -1443,7 +2058,12 @@ function getOrder(id) {
 
 const PANEL_ACTIONS = {
   reload: () => renderPanelTab(),
-  "new-listing": () => openPublish(),
+  "new-listing": () => openProductDialog(),
+  "edit-listing": (id) => {
+    const product = panelData.products.get(id);
+    if (!product) throw new Error("No se encontró el producto. Actualiza la página.");
+    openProductDialog(product);
+  },
   accept: (id) => openAcceptSheet(getOrder(id)),
   pay: (id) => openPaySheet(getOrder(id)),
   "delivery-qr": (id) => openDeliveryQrSheet(getOrder(id)),
@@ -1473,10 +2093,13 @@ const PANEL_ACTIONS = {
   async "toggle-listing"(id) {
     const product = panelData.products.get(id);
     if (!product) return;
+    if (!product.active && Number(product.price) < minPrice()) {
+      throw new Error(`${minPriceMessage()} Edita el precio para volver a mostrarlo.`);
+    }
     const { data, error } = await sb.from("products").update({ active: !product.active }).eq("id", id).select();
     if (error) throw error;
-    if (!data?.length) throw new Error("No se pudo actualizar la publicación.");
-    showToast(product.active ? "Publicación pausada." : "Publicación activa de nuevo.");
+    if (!data?.length) throw new Error("No se pudo actualizar el producto.");
+    showToast(product.active ? "Producto pausado: ya no aparece en el catálogo." : "Producto activo de nuevo.");
     refreshPanel();
     loadCatalog();
   },
@@ -1487,11 +2110,11 @@ const PANEL_ACTIONS = {
     if (!window.confirm(`¿Eliminar «${product.name}»? Los pedidos anteriores se conservan en tu historial.`)) return;
     const { data, error } = await sb.from("products").delete().eq("id", id).select();
     if (error) throw error;
-    if (!data?.length) throw new Error("No se pudo eliminar la publicación.");
+    if (!data?.length) throw new Error("No se pudo eliminar el producto.");
     if (product.image_path) sb.storage.from("product-images").remove([product.image_path]);
-    showToast("Publicación eliminada.");
+    showToast("Producto eliminado.");
     refreshPanel();
-    loadCatalog();
+    loadCatalog().then(loadStores);
   },
 
   async "approve-payment"(id) {
@@ -1524,28 +2147,68 @@ const PANEL_ACTIONS = {
 };
 
 /* ---------------------------------------------------------------------
-   Publicar y pedir
+   Productos (agregar / editar) y pedidos
    --------------------------------------------------------------------- */
 
-function openPublish() {
-  if (!requireConfigured()) return;
+// Revisa que la persona pueda vender y la lleva al paso que le falta.
+function canAddProducts() {
+  if (!requireConfigured()) return false;
   if (!state.session) {
-    openLogin("Ingresa con tu correo PUCE para publicar tu emprendimiento.", openPublish);
-    return;
+    openLogin("Ingresa con tu correo PUCE para vender en Skill-Link.", { type: "publish" });
+    return false;
   }
-  if (!state.profile?.full_name || !state.profile?.payment_qr_path) {
-    showToast("Antes de publicar, completa tu nombre y sube tu QR de cobro de Banco Pichincha.", true);
-    location.hash = "#panel/perfil";
-    return;
+  if (!isSeller()) {
+    showToast("Para vender, activa «Quiero vender» en tu cuenta.");
+    location.hash = "#panel/cuenta";
+    return false;
   }
-  updatePublishNet();
+  if (!state.store || !state.profile?.full_name || !state.profile?.payment_qr_path) {
+    showToast("Antes de agregar productos, guarda el perfil de tu tienda y tu QR de cobro.", true);
+    location.hash = "#panel/tienda";
+    return false;
+  }
+  return true;
+}
+
+function openProductDialog(product = null) {
+  if (!canAddProducts()) return;
+  const form = $("#publish-form");
+  form.reset();
+  state.editingProduct = product;
+  $("#publish-title").textContent = product ? "Editar producto" : "Agregar producto";
+  $("#publish-submit").innerHTML = product ? "Guardar cambios <span>↗</span>" : "Agregar a mi catálogo <span>↗</span>";
+  if (product) {
+    form.elements.name.value = product.name;
+    form.elements.category.value = product.category;
+    form.elements.price.value = Number(product.price).toFixed(2);
+    form.elements.description.value = product.description;
+    form.elements.pickup.checked = Boolean(product.pickup_point);
+  }
+  form.elements.active.checked = product ? Boolean(product.active) : true;
+  $("#publish-image-text").textContent = product?.image_path
+    ? "Cambiar foto (opcional · JPG, PNG o WebP, máx. 3 MB)"
+    : "Foto (opcional · JPG, PNG o WebP, máx. 3 MB)";
+  const current = $("#publish-current-image");
+  current.innerHTML = product?.image_path ? `<img src="${escapeHtml(productImageUrl(product.image_path))}" alt="Foto actual del producto" />` : "";
+  current.classList.toggle("hidden", !product?.image_path);
+  applyRate();
   els.publishDialog.showModal();
 }
 
-async function submitPublish(form) {
+async function submitProduct(form) {
   const values = new FormData(form);
+  const product = state.editingProduct;
   const price = Math.round(Number(values.get("price")) * 100) / 100;
-  if (!Number.isFinite(price) || price <= 0) throw new Error("Ingresa un precio mayor que cero.");
+  if (!Number.isFinite(price) || price <= 0) throw new Error("Ingresa un precio válido.");
+  if (price < minPrice()) throw new Error(minPriceMessage());
+  const row = {
+    name: String(values.get("name")).trim(),
+    category: String(values.get("category")),
+    price,
+    description: String(values.get("description")).trim(),
+    pickup_point: values.get("pickup") === "on",
+    active: values.get("active") === "on",
+  };
   const file = values.get("image");
   let imagePath = null;
   if (file && file.size) {
@@ -1553,30 +2216,26 @@ async function submitPublish(form) {
     imagePath = `${uid()}/${randomId()}.${extension}`;
     const { error } = await sb.storage.from("product-images").upload(imagePath, file, { contentType: file.type });
     if (error) throw error;
+    row.image_path = imagePath;
   }
-  const { error } = await sb.from("products").insert({
-    name: String(values.get("name")).trim(),
-    category: String(values.get("category")),
-    price,
-    description: String(values.get("description")).trim(),
-    image_path: imagePath,
-    pickup_point: values.get("pickup") === "on",
-  });
-  if (error) {
+  const { data, error } = product
+    ? await sb.from("products").update(row).eq("id", product.id).select()
+    : await sb.from("products").insert(row).select();
+  if (error || !data?.length) {
     if (imagePath) await sb.storage.from("product-images").remove([imagePath]);
-    throw error;
+    throw error || new Error("No se pudo guardar el producto.");
   }
+  if (product && imagePath && product.image_path) sb.storage.from("product-images").remove([product.image_path]);
   form.reset();
+  state.editingProduct = null;
   els.publishDialog.close();
-  showToast("¡Tu publicación ya aparece en el catálogo!");
+  showToast(product
+    ? "Producto actualizado."
+    : row.active ? "¡Listo! Tu producto ya aparece en tu tienda y en el catálogo." : "Producto guardado como pausado.");
   await loadCatalog();
-  if (!els.panelView.classList.contains("hidden") && state.panelTab === "publicaciones") {
-    renderPanelTab();
-  } else {
-    els.search.value = "";
-    selectCategory("Todos");
-    location.hash = "#explorar";
-  }
+  loadStores();
+  if (!els.panelView.classList.contains("hidden") && state.panelTab === "tienda") renderPanelTab();
+  else if (!product) location.hash = "#panel/tienda";
 }
 
 function updateOrderTotal() {
@@ -1593,7 +2252,7 @@ function openOrder(productId) {
     return;
   }
   if (!state.session) {
-    openLogin("Ingresa con tu correo PUCE para hacer tu pedido.", () => openOrder(productId));
+    openLogin("Ingresa con tu correo PUCE para hacer tu pedido.", { type: "order", productId });
     return;
   }
   if (product.seller_id === uid()) {
@@ -1640,13 +2299,24 @@ function bindEvents() {
     });
   });
   els.sheetDialog.addEventListener("close", stopScanner);
+  els.loginDialog.addEventListener("close", () => window.clearInterval(resendTimer));
 
   $("#open-login").addEventListener("click", () => openLogin());
-  $("#open-publish").addEventListener("click", openPublish);
-  $("#open-publish-bottom").addEventListener("click", openPublish);
+  $("#open-publish").addEventListener("click", () => openProductDialog());
+  $("#open-publish-bottom").addEventListener("click", () => openProductDialog());
   $("#logout-button").addEventListener("click", async () => {
+    state.loggingOut = true;
     await sb.auth.signOut();
     showToast("Sesión cerrada.");
+  });
+
+  // Configuración: tema claro / oscuro (el interruptor aparece aquí y en «Cuenta»).
+  $("#open-settings").addEventListener("click", () => {
+    setTheme(currentTheme(), false);
+    els.settingsDialog.showModal();
+  });
+  document.addEventListener("change", (event) => {
+    if (event.target.matches("[data-theme-switch]")) setTheme(event.target.checked ? "dark" : "light");
   });
 
   // Inicio de sesión
@@ -1656,34 +2326,25 @@ function bindEvents() {
     withBusy(form, async () => {
       const email = String(new FormData(form).get("email")).trim().toLowerCase();
       if (!PUCE_EMAIL.test(email)) throw new Error("Usa tu correo institucional @puce.edu.ec.");
-      const { error } = await sb.auth.signInWithOtp({
-        email,
-        options: { shouldCreateUser: true, emailRedirectTo: `${location.origin}${location.pathname}` },
-      });
-      if (error) throw new Error(loginErrorMessage(error));
-      state.loginEmail = email;
-      $("#login-sent-to").textContent = email;
-      showLoginStep("code");
-      $("#login-code-form").elements.code.focus();
+      await sendCode(email);
     });
   });
   $("#login-code-form").addEventListener("submit", (event) => {
     event.preventDefault();
-    const form = event.currentTarget;
-    withBusy(form, async () => {
-      const token = String(new FormData(form).get("code")).trim();
-      const { error } = await sb.auth.verifyOtp({ email: state.loginEmail, token, type: "email" });
-      if (error) {
-        throw new Error(/expired|invalid/i.test(error.message)
-          ? "El código no es válido o ya expiró. Pide uno nuevo."
-          : error.message);
-      }
-      form.reset();
-    });
+    withBusy(event.currentTarget, verifyCode);
   });
-  $("#login-back").addEventListener("click", () => showLoginStep("email"));
+  // Acepta el código pegado con espacios o guiones y entra solo al completar los 6 dígitos.
+  $("#login-code").addEventListener("input", (event) => {
+    const input = event.currentTarget;
+    const digits = input.value.replace(/\D/g, "").slice(0, 6);
+    if (input.value !== digits) input.value = digits;
+    setLoginError("");
+    if (digits.length === 6) $("#login-code-form").requestSubmit();
+  });
+  $("#login-resend").addEventListener("click", resendCode);
+  $("#login-back").addEventListener("click", useOtherEmail);
 
-  // Catálogo
+  // Catálogo y tiendas
   els.search.addEventListener("input", renderProducts);
   els.categories.addEventListener("click", (event) => {
     const chip = event.target.closest("[data-category]");
@@ -1693,7 +2354,7 @@ function bindEvents() {
     els.search.value = "";
     selectCategory("Todos");
   });
-  els.grid.addEventListener("click", (event) => {
+  const onCatalogClick = (event) => {
     const favoriteButton = event.target.closest("[data-favorite]");
     if (favoriteButton) {
       toggleFavorite(favoriteButton.dataset.favorite);
@@ -1701,7 +2362,9 @@ function bindEvents() {
     }
     const orderButton = event.target.closest("[data-order]");
     if (orderButton && !orderButton.disabled) openOrder(orderButton.dataset.order);
-  });
+  };
+  els.grid.addEventListener("click", onCatalogClick);
+  els.storeContent.addEventListener("click", onCatalogClick);
 
   // Calculadora y formularios
   $("#calc-price").addEventListener("input", updateCalculator);
@@ -1710,7 +2373,7 @@ function bindEvents() {
   $("#publish-form").addEventListener("submit", (event) => {
     event.preventDefault();
     const form = event.currentTarget;
-    if (form.reportValidity()) withBusy(form, () => submitPublish(form));
+    if (form.reportValidity()) withBusy(form, () => submitProduct(form));
   });
   $("#order-form").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1727,15 +2390,16 @@ function bindEvents() {
     event.preventDefault();
     withBusy(button, () => handler(button.dataset.id, button));
   });
+  const PANEL_FORMS = { "account-form": saveAccount, "store-form": saveStore, "admin-settings-form": saveAdminSettings };
   els.panelContent.addEventListener("submit", (event) => {
     const form = event.target;
-    if (form.id === "profile-form") {
-      event.preventDefault();
-      withBusy(form, () => saveProfile(form));
-    } else if (form.id === "admin-settings-form") {
-      event.preventDefault();
-      withBusy(form, () => saveAdminSettings(form));
-    }
+    const save = PANEL_FORMS[form.id];
+    if (!save) return;
+    event.preventDefault();
+    if (form.reportValidity()) withBusy(form, () => save(form));
+  });
+  els.panelContent.addEventListener("change", (event) => {
+    if (event.target.id === "seller-switch") toggleSeller(event.target);
   });
 
   window.addEventListener("hashchange", route);
@@ -1747,10 +2411,12 @@ function bindEvents() {
   });
   window.addEventListener("storage", (event) => {
     if (event.key === FAVORITES_KEY) renderProducts();
+    if (event.key === THEME_KEY && event.newValue) setTheme(event.newValue, false);
   });
 }
 
 async function init() {
+  setTheme(currentTheme(), false);
   bindEvents();
   updateCalculator();
   updatePublishNet();
@@ -1761,7 +2427,7 @@ async function init() {
     return;
   }
   loadSettings();
-  loadPickupPoints();
+  pickupReady = loadPickupPoints();
   try {
     await initAuth();
   } catch (error) {
@@ -1770,6 +2436,7 @@ async function init() {
   }
   route();
   await loadCatalog();
+  loadStores();
 }
 
 init();

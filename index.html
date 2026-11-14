@@ -7,8 +7,20 @@
       name="description"
       content="Skill-Link conecta emprendimientos estudiantiles con la comunidad PUCE. Publica gratis y paga una comisión solo cuando vendes."
     />
-    <meta name="theme-color" content="#f7f8f4" />
+    <meta name="theme-color" content="#0b2a5b" />
+    <meta name="color-scheme" content="light dark" />
     <title>Skill-Link | Emprende dentro de la PUCE</title>
+    <script>
+      // Aplica el tema guardado antes de pintar la página (evita un destello del otro tema).
+      (function () {
+        var theme = null;
+        try { theme = localStorage.getItem("skill-link-theme"); } catch (error) {}
+        if (theme !== "dark" && theme !== "light") {
+          theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.setAttribute("data-theme", theme);
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -38,8 +50,11 @@
         <a class="nav-link" href="#comision">Comisión</a>
       </nav>
       <div class="header-actions">
+        <button class="icon-button" id="open-settings" type="button" aria-label="Configuración" title="Configuración">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
         <button class="button button-outline" id="open-publish" type="button">
-          <span aria-hidden="true">＋</span> Publicar
+          <span aria-hidden="true">＋</span> Vender
         </button>
         <button class="button button-dark header-login" id="open-login" type="button">Ingresar</button>
         <a class="avatar-button hidden" id="open-panel" href="#panel" aria-label="Abrir mi panel">
@@ -109,6 +124,11 @@
             <button class="category-chip" data-category="Bienestar" type="button"><span>🌿</span> Bienestar</button>
             <button class="category-chip" data-category="Favoritos" type="button"><span>♡</span> Favoritos</button>
           </div>
+        </div>
+
+        <div class="store-strip hidden" id="store-strip">
+          <h3 class="list-title">Emprendimientos</h3>
+          <div class="store-strip-list" id="store-strip-list"></div>
         </div>
 
         <div class="product-grid" id="product-grid" aria-live="polite"></div>
@@ -185,12 +205,17 @@
         <div>
           <div class="eyebrow">TU TALENTO MERECE UN LUGAR</div>
           <h2>¿Tienes algo para compartir?</h2>
-          <p>Publica gratis y llega a toda la comunidad PUCE.</p>
+          <p>Crea tu tienda gratis, con tu logo y todo tu catálogo, y llega a toda la comunidad PUCE.</p>
         </div>
         <button class="button button-light" id="open-publish-bottom" type="button">
-          Publica gratis <span aria-hidden="true">↗</span>
+          Empieza a vender <span aria-hidden="true">↗</span>
         </button>
       </section>
+    </main>
+
+    <!-- ============ TIENDA DE UN EMPRENDEDOR ============ -->
+    <main id="store-view" class="store-view hidden">
+      <div id="store-content"></div>
     </main>
 
     <!-- ============ PANEL DEL USUARIO ============ -->
@@ -208,10 +233,10 @@
       </div>
       <nav class="panel-tabs" id="panel-tabs" aria-label="Secciones del panel">
         <a class="panel-tab" data-tab="compras" href="#panel/compras">Mis compras</a>
-        <a class="panel-tab" data-tab="ventas" href="#panel/ventas">Mis ventas</a>
-        <a class="panel-tab" data-tab="publicaciones" href="#panel/publicaciones">Publicaciones</a>
-        <a class="panel-tab" data-tab="comisiones" href="#panel/comisiones">Comisiones</a>
-        <a class="panel-tab" data-tab="perfil" href="#panel/perfil">Perfil y QR</a>
+        <a class="panel-tab hidden" data-tab="ventas" data-seller-tab href="#panel/ventas">Mis ventas</a>
+        <a class="panel-tab hidden" data-tab="tienda" data-seller-tab href="#panel/tienda">Mi tienda</a>
+        <a class="panel-tab hidden" data-tab="comisiones" data-seller-tab href="#panel/comisiones">Comisiones</a>
+        <a class="panel-tab" data-tab="cuenta" href="#panel/cuenta">Cuenta</a>
         <a class="panel-tab hidden" data-tab="admin" href="#panel/admin" id="admin-tab">Administración</a>
       </nav>
       <div class="panel-content" id="panel-content" aria-live="polite"></div>
@@ -229,27 +254,45 @@
         <button class="dialog-close" type="button" data-close aria-label="Cerrar">×</button>
         <div class="eyebrow eyebrow-green">SOLO COMUNIDAD PUCE</div>
         <h2 id="login-title">Ingresa con tu correo institucional</h2>
-        <p class="dialog-description" id="login-reason">Te enviaremos un código de acceso a tu correo. No necesitas contraseña.</p>
+        <p class="dialog-description" id="login-reason">Te enviaremos un código de 6 dígitos a tu correo. No necesitas contraseña.</p>
         <label>Correo PUCE<input name="email" type="email" required maxlength="120" autocomplete="email" placeholder="nombre@puce.edu.ec" /></label>
         <button class="button button-dark dialog-submit" type="submit">Enviarme el código <span>↗</span></button>
       </form>
-      <form class="dialog-form hidden" id="login-code-form">
+      <form class="dialog-form hidden" id="login-code-form" novalidate>
         <button class="dialog-close" type="button" data-close aria-label="Cerrar">×</button>
         <div class="eyebrow eyebrow-green">REVISA TU CORREO</div>
-        <h2>Revisa tu correo</h2>
-        <p class="dialog-description">Enviamos un correo de Skill-Link a <strong id="login-sent-to"></strong>. Escribe aquí el código de 6 dígitos, o toca <strong>Entrar a Skill-Link</strong> en el correo desde este dispositivo. Si no llega en un minuto, revisa el correo no deseado.</p>
-        <label>Código de 6 dígitos<input name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" placeholder="123456" /></label>
-        <button class="button button-dark dialog-submit" type="submit">Entrar con el código <span>↗</span></button>
-        <button class="text-button form-link" id="login-back" type="button">Usar otro correo</button>
+        <h2>Escribe tu código</h2>
+        <p class="dialog-description">Enviamos un código de 6 dígitos a <strong id="login-sent-to"></strong>. Puedes ir a tu correo a copiarlo y volver: esta pantalla te espera. Si no llega en un minuto, revisa el correo no deseado.</p>
+        <p class="login-status" id="login-status" aria-live="polite"></p>
+        <label>Código de 6 dígitos<input id="login-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" aria-describedby="login-error" /></label>
+        <p class="login-error hidden" id="login-error" role="alert"></p>
+        <button class="button button-dark dialog-submit" type="submit">Entrar <span>↗</span></button>
+        <div class="login-links">
+          <button class="text-button" id="login-resend" type="button">Reenviar código</button>
+          <span aria-hidden="true">·</span>
+          <button class="text-button" id="login-back" type="button">Usar otro correo</button>
+        </div>
       </form>
+    </dialog>
+
+    <dialog class="app-dialog small-dialog" id="settings-dialog" aria-labelledby="settings-title">
+      <div class="dialog-form">
+        <button class="dialog-close" type="button" data-close aria-label="Cerrar">×</button>
+        <div class="eyebrow eyebrow-green">AJUSTES DE LA APLICACIÓN</div>
+        <h2 id="settings-title">Configuración</h2>
+        <label class="switch-row">
+          <span><strong>Tema oscuro</strong><small>Más cómodo de noche. Se recuerda en este dispositivo.</small></span>
+          <input type="checkbox" role="switch" data-theme-switch />
+        </label>
+      </div>
     </dialog>
 
     <dialog class="app-dialog" id="publish-dialog" aria-labelledby="publish-title">
       <form class="dialog-form" id="publish-form">
         <button class="dialog-close" type="button" data-close aria-label="Cerrar">×</button>
-        <div class="eyebrow eyebrow-green">UNA IDEA QUE MERECE VERSE</div>
-        <h2 id="publish-title">Publica tu emprendimiento</h2>
-        <p class="dialog-description">Publicar es gratis. Solo se genera una comisión del <strong data-rate>10%</strong> cuando concretas una venta.</p>
+        <div class="eyebrow eyebrow-green">MI CATÁLOGO</div>
+        <h2 id="publish-title">Agregar producto</h2>
+        <p class="dialog-description">Aparece en tu tienda y en el catálogo. Precio mínimo: <strong data-min-price>$1.00</strong>. Solo se cobra una comisión del <strong data-rate>10%</strong> cuando concretas una venta.</p>
         <label>Nombre del producto o servicio<input name="name" required minlength="2" maxlength="60" placeholder="Ej. Brownies de la casa" /></label>
         <div class="form-row">
           <label>Categoría
@@ -260,13 +303,15 @@
               <option value="Bienestar">Bienestar</option>
             </select>
           </label>
-          <label>Precio (USD)<input name="price" id="publish-price" type="number" min="0.01" max="9999" step="0.01" required placeholder="5.00" inputmode="decimal" /></label>
+          <label>Precio (USD)<input name="price" id="publish-price" type="number" min="1.00" max="9999" step="0.01" required placeholder="5.00" inputmode="decimal" /></label>
         </div>
-        <div class="net-preview" id="publish-net"></div>
-        <label>Cuéntanos un poco más<textarea name="description" rows="3" maxlength="300" required placeholder="¿Qué hace especial tu propuesta?"></textarea></label>
-        <label>Foto (opcional · JPG, PNG o WebP, máx. 3 MB)<input name="image" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+        <div class="net-preview" id="publish-net" aria-live="polite"></div>
+        <label>Descripción<textarea name="description" rows="3" maxlength="300" required placeholder="¿Qué incluye? ¿Qué lo hace especial?"></textarea></label>
+        <div class="current-image hidden" id="publish-current-image"></div>
+        <label><span id="publish-image-text">Foto (opcional · JPG, PNG o WebP, máx. 3 MB)</span><input name="image" type="file" accept="image/jpeg,image/png,image/webp" /></label>
         <label class="checkbox-label"><input name="pickup" type="checkbox" checked /> Puedo entregar en un Punto Link</label>
-        <button class="button button-dark dialog-submit" type="submit">Publicar en el catálogo <span>↗</span></button>
+        <label class="checkbox-label"><input name="active" type="checkbox" checked /> Mostrar en el catálogo (si lo desmarcas, queda pausado)</label>
+        <button class="button button-dark dialog-submit" id="publish-submit" type="submit">Agregar a mi catálogo <span>↗</span></button>
       </form>
     </dialog>
 
