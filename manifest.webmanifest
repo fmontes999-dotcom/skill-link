@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "Skill-Link · Mercado de la comunidad PUCE",
+  "short_name": "Skill-Link",
+  "description": "Compra y vende emprendimientos de estudiantes de la PUCE. Paga con QR de Banco Pichincha y recibe en un Punto Link.",
+  "lang": "es-EC",
+  "dir": "ltr",
+  "start_url": "/?origen=app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b2a5b",
+  "theme_color": "#0b2a5b",
+  "categories": ["shopping", "lifestyle", "education"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Explorar el catálogo", "short_name": "Catálogo", "url": "/#explorar", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Mis compras", "short_name": "Compras", "url": "/#panel/compras", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Mi tienda", "short_name": "Mi tienda", "url": "/#panel/tienda", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

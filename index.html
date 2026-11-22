@@ -10,6 +10,24 @@
     <meta name="theme-color" content="#0b2a5b" />
     <meta name="color-scheme" content="light dark" />
     <title>Skill-Link | Emprende dentro de la PUCE</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/logo.svg" type="image/svg+xml" />
+    <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Skill-Link" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Skill-Link" />
+    <meta property="og:title" content="Skill-Link · El mercado de la comunidad PUCE" />
+    <meta property="og:description" content="Compra y vende emprendimientos de estudiantes de la PUCE. Paga con QR de Banco Pichincha y recibe en un Punto Link." />
+    <meta property="og:url" content="https://skill-link-44qv.onrender.com/" />
+    <meta property="og:image" content="https://skill-link-44qv.onrender.com/icons/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="es_EC" />
+    <meta name="twitter:card" content="summary_large_image" />
     <script>
       // Aplica el tema guardado antes de pintar la página (evita un destello del otro tema).
       (function () {
@@ -31,9 +49,17 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
     <script src="config.js" defer></script>
+    <script src="install.js" defer></script>
     <script src="app.js" defer></script>
   </head>
   <body>
+    <div class="splash" id="splash" aria-hidden="true">
+      <img src="icons/logo.svg" alt="" width="96" height="96" />
+      <strong>skill<span>-</span>link</strong>
+      <small>El mercado de la comunidad PUCE</small>
+      <i class="splash-bar"></i>
+    </div>
+
     <div class="demo-banner">
       <span class="demo-dot"></span>
       <span>Exclusivo para la comunidad PUCE · Publicar es gratis, solo pagas una comisión del <strong data-rate>10%</strong> cuando vendes</span>
@@ -41,7 +67,7 @@
 
     <header class="site-header">
       <a class="brand" href="#" aria-label="Skill-Link, inicio">
-        <span class="brand-mark" aria-hidden="true"><span></span><span></span></span>
+        <img class="brand-logo" src="icons/logo.svg" alt="" width="32" height="32" />
         <span>skill<span class="brand-dash">-</span>link</span>
       </a>
       <nav class="main-nav" aria-label="Navegación principal">
@@ -243,23 +269,40 @@
     </main>
 
     <footer class="site-footer">
-      <a class="brand footer-brand" href="#"><span class="brand-mark" aria-hidden="true"><span></span><span></span></span><span>skill<span class="brand-dash">-</span>link</span></a>
-      <span>Talento local. Comunidad que conecta.</span>
+      <a class="brand footer-brand" href="#"><img class="brand-logo" src="icons/logo.svg" alt="" width="26" height="26" /><span>skill<span class="brand-dash">-</span>link</span></a>
+      <nav class="footer-links" aria-label="Información">
+        <a href="instalar.html">Instalar la app</a>
+        <a href="terminos.html">Términos de uso</a>
+        <a href="privacidad.html">Privacidad</a>
+      </nav>
       <span class="footer-campus"><span class="caption-dot"></span> Comunidad PUCE</span>
     </footer>
+
+    <div class="install-banner hidden" id="install-banner" role="region" aria-label="Instalar Skill-Link">
+      <img src="icons/logo.svg" alt="" width="40" height="40" />
+      <div>
+        <strong>Instala Skill-Link en tu celular</strong>
+        <small>Ábrela desde su ícono, como cualquier app.</small>
+      </div>
+      <button class="button button-dark" id="install-banner-button" type="button">Instalar</button>
+      <button class="install-close" id="install-banner-close" type="button" aria-label="Ahora no">×</button>
+    </div>
 
     <!-- ============ DIÁLOGOS ============ -->
     <dialog class="app-dialog small-dialog" id="login-dialog" aria-labelledby="login-title">
       <form class="dialog-form" id="login-email-form">
         <button class="dialog-close" type="button" data-close aria-label="Cerrar">×</button>
+        <img class="dialog-logo" src="icons/logo.svg" alt="Skill-Link" width="52" height="52" />
         <div class="eyebrow eyebrow-green">SOLO COMUNIDAD PUCE</div>
-        <h2 id="login-title">Ingresa con tu correo institucional</h2>
+        <h2 id="login-title">Ingresa o crea tu cuenta</h2>
         <p class="dialog-description" id="login-reason">Te enviaremos un código de 6 dígitos a tu correo. No necesitas contraseña.</p>
         <label>Correo PUCE<input name="email" type="email" required maxlength="120" autocomplete="email" placeholder="nombre@puce.edu.ec" /></label>
         <button class="button button-dark dialog-submit" type="submit">Enviarme el código <span>↗</span></button>
+        <p class="form-note">Si es tu primera vez, la cuenta se crea sola. Al ingresar aceptas los <a href="terminos.html" target="_blank" rel="noopener">Términos de uso</a> y la <a href="privacidad.html" target="_blank" rel="noopener">Política de privacidad</a>.</p>
       </form>
       <form class="dialog-form hidden" id="login-code-form" novalidate>
         <button class="dialog-close" type="button" data-close aria-label="Cerrar">×</button>
+        <img class="dialog-logo" src="icons/logo.svg" alt="Skill-Link" width="52" height="52" />
         <div class="eyebrow eyebrow-green">REVISA TU CORREO</div>
         <h2>Escribe tu código</h2>
         <p class="dialog-description">Enviamos un código de 6 dígitos a <strong id="login-sent-to"></strong>. Puedes ir a tu correo a copiarlo y volver: esta pantalla te espera. Si no llega en un minuto, revisa el correo no deseado.</p>
@@ -284,6 +327,11 @@
           <span><strong>Tema oscuro</strong><small>Más cómodo de noche. Se recuerda en este dispositivo.</small></span>
           <input type="checkbox" role="switch" data-theme-switch />
         </label>
+        <div class="settings-section" id="install-section">
+          <h3>Instalar Skill-Link</h3>
+          <div id="install-content"></div>
+          <p class="form-note"><a href="instalar.html">Página de descarga con código QR para compartir</a></p>
+        </div>
       </div>
     </dialog>
 

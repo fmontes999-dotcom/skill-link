@@ -12,6 +12,12 @@ Plataforma web exclusiva de la comunidad PUCE que conecta a emprendedores estudi
 
 **Tema claro y oscuro:** se cambia en **Configuración** (el ícono de engranaje) o en **Cuenta**. El navegador lo recuerda. Los colores predominantes son azules.
 
+**App instalable:** Skill-Link se puede instalar en el celular como aplicación web (PWA): ícono propio, pantalla completa y pantalla de carga con el logo. La página de descarga es `/instalar.html`. Tiene el botón de instalar, la guía para iPhone y Android, y un código QR para carteles. En el celular aparece un aviso para instalarla, que vuelve a salir a los 14 días si se cierra.
+
+**Logo:** el de la carpeta `icons/` es **provisional**: dos eslabones entrelazados, en azul. Para cambiarlo por el definitivo, reemplaza `icons/logo.svg` y `icons/logo-maskable.svg` (este último a sangre completa, con el dibujo dentro del 70% central) y vuelve a generar los PNG en los mismos tamaños: 192, 512, 180 (Apple) y 32 (favicon), más `og-image.png` de 1200×630 para la vista previa al compartir el enlace.
+
+**Textos legales:** `terminos.html` y `privacidad.html` (versión 1.0), redactados según la Ley Orgánica de Protección de Datos Personales del Ecuador. **Antes de difundirlos hay que reemplazar `[correo de contacto del equipo]`** y revisarlos con el docente.
+
 - **Hosting:** Render (Static Site)
 - **Base de datos, autenticación y archivos:** Supabase
 
@@ -23,7 +29,7 @@ Plataforma web exclusiva de la comunidad PUCE que conecta a emprendedores estudi
 |---|---|---|
 | 1. Pedido | Comprador | Elige un producto, desde el catálogo o desde la tienda del emprendedor, y envía el pedido. |
 | 2. Aceptación | Emprendedor | Acepta y fija el **Punto Link** y la hora (o rechaza). |
-| 3. Pago | Comprador | Ve el **QR de cobro de Banco Pichincha del emprendedor**, paga desde su app bancaria y escribe el número de comprobante. |
+| 3. Pago | Comprador | Ve el monto y la referencia `SKL-<código>` con botones **Copiar**, paga con el **QR de cobro de Banco Pichincha del emprendedor** y escribe el número de comprobante. Desde el mismo celular no se puede escanear la propia pantalla: en ese caso paga en el Punto Link, escaneando el QR que el emprendedor muestra en **su** celular («Mostrar mi QR de cobro»). |
 | 4. Entrega | Ambos | En el Punto Link, el comprador muestra su **QR de entrega** y el emprendedor lo escanea (o escribe el código de 6 caracteres). |
 | 5. Venta registrada | Sistema | El pedido queda «Entregado» y se genera la **comisión** (8–10%). |
 | 6. Pago de comisiones | Emprendedor | En su panel ve lo que debe y paga escaneando el **QR de Skill-Link**. Luego reporta el comprobante. |
@@ -49,6 +55,13 @@ Reglas del Word implementadas:
 index.html          Página (catálogo, tiendas, cómo funciona, comisión, panel)
 styles.css          Estilos (azules, tema claro y oscuro)
 app.js              Lógica: sesión con código, catálogo, tiendas, pedidos, QR, comisiones, administración
+install.js          Instalación como app: service worker, botón «Instalar» y guía iPhone/Android
+sw.js               Service worker (abre sin conexión; ya preparado para notificaciones push)
+manifest.webmanifest Nombre, ícono y colores de la app instalada
+icons/              Logo (SVG) e íconos PNG, favicon e imagen para compartir
+instalar.html       Página de descarga con código QR
+terminos.html       Términos de uso
+privacidad.html     Política de privacidad
 config.example.js   Plantilla de configuración local (copiar como config.js)
 supabase/schema.sql Tablas, seguridad (RLS), funciones y buckets de Supabase
 scripts/build.mjs   Build de Render: genera dist/ y config.js con las variables de entorno

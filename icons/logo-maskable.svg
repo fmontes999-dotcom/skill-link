@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Versión a sangre completa para íconos "maskable" (Android) y Apple: el sistema recorta las esquinas. -->
+  <defs>
+    <linearGradient id="sl-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3f86de"/>
+      <stop offset="1" stop-color="#1e5aa8"/>
+    </linearGradient>
+    <clipPath id="sl-low"><rect x="196" y="256" width="120" height="110"/></clipPath>
+    <mask id="sl-over" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect x="211" y="196" width="230" height="120" rx="60" fill="none" stroke="#fff" stroke-width="40" clip-path="url(#sl-low)"/>
+    </mask>
+  </defs>
+  <rect width="512" height="512" fill="url(#sl-bg)"/>
+  <g transform="translate(256 256) scale(0.74) translate(-256 -256)">
+    <g transform="rotate(-45 256 256)" fill="none" stroke-width="40">
+      <rect x="71" y="196" width="230" height="120" rx="60" stroke="#9cc9f7"/>
+      <rect x="211" y="196" width="230" height="120" rx="60" stroke="#ffffff"/>
+      <rect x="71" y="196" width="230" height="120" rx="60" stroke="#9cc9f7" mask="url(#sl-over)"/>
+    </g>
+  </g>
+</svg>

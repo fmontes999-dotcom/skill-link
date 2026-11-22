@@ -95,9 +95,7 @@ h1, h2, h3, p { margin-top: 0; }
 .brand { display: inline-flex; align-items: center; gap: 9px; font-family: var(--display); font-size: 21px; font-weight: 800; letter-spacing: -1.2px; color: var(--ink); }
 .site-header .brand, .site-footer .brand { color: var(--on-navy); }
 .brand-dash { color: var(--accent-2); }
-.brand-mark { width: 29px; height: 29px; position: relative; display: flex; align-items: center; justify-content: center; gap: 3px; border-radius: 9px; background: rgb(255 255 255 / .14); transform: rotate(-5deg); }
-.brand-mark span { width: 5px; height: 14px; border-radius: 5px; background: #ffffff; transform: rotate(22deg); }
-.brand-mark span:last-child { height: 10px; background: var(--accent-2); transform: rotate(-22deg); }
+.brand-logo { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 8px; box-shadow: 0 0 0 1px rgb(255 255 255 / .18); }
 .main-nav { display: flex; height: 100%; align-items: center; gap: 36px; margin-left: 60px; }
 .nav-link { position: relative; height: 100%; display: flex; align-items: center; color: var(--on-navy-muted); font-size: 14px; font-weight: 600; transition: color .2s; }
 .nav-link:hover, .nav-link.active { color: var(--on-navy); }
@@ -283,10 +281,40 @@ a.seller-line:hover { text-decoration: underline; }
 .seller-sparkle { position: absolute; right: 31%; top: -26px; color: color-mix(in srgb, var(--primary) 18%, transparent); font-size: 93px; }
 .site-footer { min-height: 77px; display: flex; align-items: center; justify-content: space-between; padding: 0 max(calc((100vw - 1130px) / 2), 6.3vw); background: var(--navy); color: var(--on-navy-muted); font-size: 12px; }
 .footer-brand { font-size: 16px; }
-.footer-brand .brand-mark { width: 23px; height: 23px; border-radius: 7px; }
-.footer-brand .brand-mark span { height: 11px; width: 4px; }
-.footer-brand .brand-mark span:last-child { height: 8px; }
+.footer-brand .brand-logo { width: 26px; height: 26px; border-radius: 7px; }
+.footer-links { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.footer-links a { color: var(--on-navy-muted); font-weight: 600; }
+.footer-links a:hover { color: var(--on-navy); text-decoration: underline; }
 .footer-campus { display: flex; align-items: center; gap: 7px; color: var(--on-navy); }
+
+/* ---------- Pantalla de carga (splash) ---------- */
+.splash { position: fixed; z-index: 50; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: radial-gradient(circle at 50% 35%, #1e5aa8, #0b2a5b 70%); color: #ffffff; animation: splash-out .4s ease 5s forwards; }
+.splash img { width: 96px; height: 96px; border-radius: 22px; box-shadow: 0 18px 40px rgb(0 0 0 / .35); animation: splash-pop .5s ease both; }
+.splash strong { margin-top: 8px; font-family: var(--display); font-size: 30px; font-weight: 800; letter-spacing: -1.4px; }
+.splash strong span { color: #7fb6f2; }
+.splash small { color: #c3d4ee; font-size: 13px; }
+.splash-bar { position: relative; width: 120px; height: 3px; margin-top: 18px; overflow: hidden; border-radius: 3px; background: rgb(255 255 255 / .18); }
+.splash-bar::after { position: absolute; inset: 0; width: 40%; border-radius: 3px; background: #7fb6f2; animation: splash-load 1s ease-in-out infinite; content: ""; }
+.splash-hide { animation: splash-out .35s ease forwards; }
+@keyframes splash-out { to { opacity: 0; visibility: hidden; } }
+@keyframes splash-pop { from { opacity: 0; transform: scale(.85); } }
+@keyframes splash-load { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+/* ---------- Instalar la app ---------- */
+.install-banner { position: fixed; z-index: 4; right: 12px; bottom: 12px; left: 12px; display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); box-shadow: 0 14px 40px rgb(var(--shadow) / .28); }
+.install-banner img { flex: 0 0 auto; border-radius: 10px; }
+.install-banner > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.install-banner strong { font-size: 14px; }
+.install-banner small { color: var(--muted); font-size: 12px; }
+.install-banner .button { min-height: 38px; padding: 0 14px; }
+.install-close { flex: 0 0 auto; width: 30px; height: 30px; border: 0; border-radius: 50%; background: var(--surface-3); color: var(--muted); font-size: 18px; }
+.settings-section { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+.settings-section h3 { margin: 0 0 10px; font-family: var(--display); font-size: 16px; }
+.install-button { width: 100%; margin-bottom: 12px; }
+.install-steps { margin: 0; padding-left: 20px; color: var(--ink); font-size: 13px; line-height: 1.7; }
+.install-steps strong { color: var(--ink); }
+.install-icon { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; background: var(--soft); color: var(--primary); font-size: 12px; }
+.install-done { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--ok-bg); color: var(--ok-fg); font-size: 13px; font-weight: 700; }
 
 /* ---------- Diálogos ---------- */
 .app-dialog { width: min(500px, calc(100% - 28px)); max-height: min(90vh, 830px); padding: 0; overflow: auto; border: 1px solid var(--line); border-radius: 17px; background: var(--surface); color: var(--ink); box-shadow: 0 24px 80px rgb(var(--shadow) / .3); }
@@ -295,6 +323,7 @@ a.seller-line:hover { text-decoration: underline; }
 .dialog-form { position: relative; padding: 32px; }
 .dialog-close { position: absolute; top: 17px; right: 18px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--surface-3); color: var(--muted); font-size: 21px; line-height: 1; }
 .dialog-form h2 { margin: 9px 35px 7px 0; font-family: var(--display); font-size: 24px; letter-spacing: -.8px; }
+.dialog-form > .eyebrow { margin-right: 40px; line-height: 1.5; }
 .dialog-description { margin-bottom: 21px; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .dialog-form > label, .dialog-form form > label, .form-row > label { display: flex; flex-direction: column; gap: 7px; margin: 0 0 14px; color: var(--ink); font-size: 12px; font-weight: 700; }
 .dialog-form input:not([type="checkbox"]):not([type="radio"]), .dialog-form select, .dialog-form textarea,
@@ -310,7 +339,25 @@ a.seller-line:hover { text-decoration: underline; }
 .checkbox-label input { width: 17px; height: 17px; flex: 0 0 auto; accent-color: var(--primary); }
 .checkbox-label small { color: var(--muted); font-size: 11px; }
 .dialog-submit { width: 100%; margin-top: 4px; }
+.dialog-logo { display: block; width: 52px; height: 52px; margin: 0 0 14px; border-radius: 13px; box-shadow: 0 8px 20px rgb(var(--shadow) / .2); }
 .form-note { margin: 13px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; text-align: center; }
+.form-note a { color: var(--primary); font-weight: 700; text-decoration: underline; }
+
+/* Pago: datos para copiar y opciones según el dispositivo */
+.copy-list { display: grid; gap: 8px; margin: 0 0 14px; }
+.copy-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.copy-row > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.copy-row span { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.copy-row strong { color: var(--ink); font-family: var(--display); font-size: 17px; overflow-wrap: anywhere; }
+.copy-row small { color: var(--muted); font-size: 12px; }
+.copy-row .button { flex: 0 0 auto; min-height: 34px; padding: 0 12px; font-size: 12px; }
+.pay-option { margin: 0 0 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 13px; line-height: 1.55; }
+.pay-option p { margin: 6px 0 0; color: var(--ink); }
+.pay-option summary { color: var(--primary); font-weight: 700; cursor: pointer; }
+.pay-option[open] summary { margin-bottom: 12px; }
+.pay-option-main { border-color: var(--info-bg); background: var(--soft); color: var(--on-soft); }
+.pay-option-main p { color: var(--on-soft); }
+.qr-frame-large { width: min(300px, 100%); }
 .form-link { display: block; margin: 12px auto 0; }
 .interest-product { display: flex; justify-content: space-between; gap: 12px; margin: 18px 0; padding: 13px; border-radius: 9px; background: var(--soft); color: var(--on-soft); font-size: 13px; }
 .interest-product strong { font-size: 15px; }
@@ -398,6 +445,35 @@ input[role="switch"]:disabled { opacity: .6; cursor: default; }
 .store-info dd small { margin-top: -3px; color: var(--muted); font-size: 12px; }
 .store-info a { color: var(--primary); font-weight: 600; text-decoration: underline; }
 .store-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* ---------- Páginas de texto (términos, privacidad) y de descarga ---------- */
+.doc-page { max-width: 1000px; min-height: 70vh; margin: 0 auto; padding: 40px 25px 70px; }
+.legal { max-width: 760px; margin: 0 auto; padding: 32px 36px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+.legal h1 { margin: 10px 0 6px; font-family: var(--display); font-size: 34px; letter-spacing: -1.4px; }
+.legal-meta { margin: 0 0 22px; color: var(--muted); font-size: 13px; }
+.legal h2 { margin: 26px 0 8px; font-family: var(--display); font-size: 18px; }
+.legal p, .legal li { color: var(--ink); font-size: 15px; line-height: 1.7; }
+.legal p { margin: 0 0 10px; }
+.legal ul { margin: 0 0 10px; padding-left: 20px; }
+.legal li { margin-bottom: 6px; }
+.legal a { color: var(--primary); font-weight: 600; text-decoration: underline; }
+.install-hero { display: flex; flex-direction: column; align-items: center; padding: 20px 0 30px; text-align: center; }
+.install-logo { width: 120px; height: 120px; margin-bottom: 18px; border-radius: 28px; box-shadow: 0 18px 40px rgb(var(--shadow) / .25); }
+.install-hero h1 { margin: 10px 0 12px; font-family: var(--display); font-size: clamp(32px, 6vw, 46px); letter-spacing: -1.8px; }
+.install-hero > p { max-width: 560px; margin: 0 0 22px; color: var(--muted); font-size: 16px; line-height: 1.7; }
+.install-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; }
+.install-actions .button { min-height: 48px; padding: 0 22px; font-size: 15px; }
+.install-note { margin: 16px 0 0 !important; font-size: 13px !important; }
+.install-guides { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.install-guides.android-first #guide-android { order: -1; }
+.install-guides h2, .install-share h2 { margin: 0 0 12px; font-family: var(--display); font-size: 20px; }
+.guide-current { border-color: var(--primary); box-shadow: 0 0 0 3px var(--focus); }
+.install-share { display: grid; grid-template-columns: 1fr 240px; align-items: center; gap: 24px; }
+.install-share p { margin: 0 0 14px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.install-share .qr-frame { width: 240px; margin: 0; }
+.install-share .qr-frame img, .install-share .qr-frame canvas { width: 100% !important; height: auto !important; }
+.install-share-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.install-link { margin: 12px 0 0 !important; font-size: 12px !important; overflow-wrap: anywhere; }
 
 /* ---------- Panel ---------- */
 .panel-view { min-height: 70vh; max-width: 1130px; margin: 0 auto; padding: 40px 25px 70px; }
@@ -523,7 +599,7 @@ input[role="switch"]:disabled { opacity: .6; cursor: default; }
   .demo-banner { min-height: 30px; font-size: 11px; text-align: center; }
   .site-header { height: 63px; padding: 0 16px; }
   .brand { gap: 6px; font-size: 18px; }
-  .brand-mark { width: 26px; height: 26px; }
+  .brand-logo { width: 28px; height: 28px; }
   .main-nav { display: none; }
   .header-actions { gap: 8px; }
   .icon-button, .avatar-button { width: 34px; height: 34px; }
@@ -571,9 +647,10 @@ input[role="switch"]:disabled { opacity: .6; cursor: default; }
   .seller-banner { align-items: flex-start; flex-direction: column; margin: 0 16px 40px; padding: 24px; }
   .seller-banner h2 { font-size: 20px; }
   .seller-sparkle { right: -3px; top: -34px; }
-  .site-footer { min-height: 95px; display: grid; grid-template-columns: 1fr auto; gap: 5px; padding: 17px 16px; }
-  .site-footer > span:nth-child(2) { grid-row: 2; font-size: 11px; }
-  .footer-campus { grid-column: 2; grid-row: 1 / span 2; }
+  .site-footer { min-height: 95px; display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 18px 16px 90px; }
+  .footer-links { grid-column: 1 / -1; grid-row: 2; font-size: 12px; }
+  .footer-campus { grid-column: 2; grid-row: 1; }
+  .install-banner small { display: none; }
   .dialog-form { padding: 27px 20px 24px; }
   .dialog-form h2 { font-size: 21px; }
   .form-row { gap: 8px; }
@@ -582,6 +659,11 @@ input[role="switch"]:disabled { opacity: .6; cursor: default; }
   .calc-rate strong { font-size: 44px; }
   .panel-view { padding: 28px 16px 50px; }
   .store-view { padding: 20px 16px 50px; }
+  .doc-page { padding: 24px 16px 50px; }
+  .legal { padding: 22px 18px; }
+  .legal h1 { font-size: 27px; }
+  .install-guides, .install-share { grid-template-columns: 1fr; }
+  .install-share .qr-frame { width: min(240px, 100%); margin: 0 auto; }
   .store-hero { flex-direction: column; align-items: flex-start; gap: 14px; padding: 20px; }
   .store-hero h1 { font-size: 27px; }
   .store-logo-lg { width: 88px; height: 88px; font-size: 28px; }

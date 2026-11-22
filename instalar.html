@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Instala Skill-Link en tu celular: el mercado de emprendimientos estudiantiles de la comunidad PUCE." />
+    <meta name="theme-color" content="#0b2a5b" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Instalar Skill-Link</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/logo.svg" type="image/svg+xml" />
+    <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Skill-Link" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Instala Skill-Link en tu celular" />
+    <meta property="og:description" content="El mercado de la comunidad PUCE: emprendimientos estudiantiles, pago con QR y entrega en Punto Link." />
+    <meta property="og:url" content="https://skill-link-44qv.onrender.com/instalar.html" />
+    <meta property="og:image" content="https://skill-link-44qv.onrender.com/icons/og-image.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      (function () {
+        var theme = null;
+        try { theme = localStorage.getItem("skill-link-theme"); } catch (error) {}
+        if (theme !== "dark" && theme !== "light") {
+          theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.setAttribute("data-theme", theme);
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+    <script src="install.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="Skill-Link, inicio">
+        <img class="brand-logo" src="icons/logo.svg" alt="" width="32" height="32" />
+        <span>skill<span class="brand-dash">-</span>link</span>
+      </a>
+      <div class="header-actions">
+        <a class="button button-dark header-login" href="./">Abrir Skill-Link</a>
+      </div>
+    </header>
+
+    <main class="doc-page install-page">
+      <section class="install-hero">
+        <img class="install-logo" src="icons/logo.svg" alt="Logo de Skill-Link" width="120" height="120" />
+        <div class="eyebrow eyebrow-green">APP DE LA COMUNIDAD PUCE</div>
+        <h1>Skill-Link en tu celular</h1>
+        <p>Compra y vende emprendimientos de estudiantes de la PUCE, paga con QR de Banco Pichincha y recibe tu pedido en un Punto Link del campus.</p>
+        <div class="install-actions">
+          <button class="button button-dark hidden" id="install-now" type="button">Instalar Skill-Link</button>
+          <p class="install-done hidden" id="install-installed">✓ Ya estás usando Skill-Link instalada.</p>
+          <a class="button button-outline" href="./">Usar en el navegador</a>
+        </div>
+        <p class="install-note">Es gratis, ocupa muy poco espacio y no necesitas tienda de aplicaciones.</p>
+      </section>
+
+      <section class="install-guides" aria-label="Cómo instalar">
+        <article class="panel-card" id="guide-ios">
+          <h2>iPhone</h2>
+          <div class="guide-content"></div>
+        </article>
+        <article class="panel-card" id="guide-android">
+          <h2>Android</h2>
+          <div class="guide-content"></div>
+        </article>
+      </section>
+
+      <section class="panel-card install-share">
+        <div>
+          <h2>Comparte este código</h2>
+          <p>Escanéalo con la cámara del celular para llegar a esta página. Úsalo en carteles, presentaciones y redes.</p>
+          <div class="install-share-actions">
+            <a class="button button-dark" id="qr-download" href="#" download="skill-link-instalar-qr.png">Descargar QR (PNG)</a>
+            <button class="button button-outline" id="copy-link" type="button">Copiar enlace</button>
+          </div>
+          <p class="install-link" id="install-link"></p>
+        </div>
+        <div class="qr-frame" id="install-qr" aria-label="Código QR para abrir esta página"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="brand footer-brand" href="./"><img class="brand-logo" src="icons/logo.svg" alt="" width="26" height="26" /><span>skill<span class="brand-dash">-</span>link</span></a>
+      <nav class="footer-links" aria-label="Información">
+        <a href="instalar.html">Instalar la app</a>
+        <a href="terminos.html">Términos de uso</a>
+        <a href="privacidad.html">Privacidad</a>
+      </nav>
+      <span class="footer-campus"><span class="caption-dot"></span> Comunidad PUCE</span>
+    </footer>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script>
+      "use strict";
+      document.addEventListener("DOMContentLoaded", function () {
+        var api = window.SkillLinkInstall;
+        var pageUrl = location.origin + "/instalar.html";
+        var toastTimer;
+        function toast(message) {
+          var box = document.getElementById("toast");
+          box.textContent = message;
+          box.classList.add("visible");
+          clearTimeout(toastTimer);
+          toastTimer = setTimeout(function () { box.classList.remove("visible"); }, 3200);
+        }
+
+        // Guías: primero la del dispositivo de la persona.
+        var platform = api ? api.platform() : "desktop";
+        document.querySelector("#guide-ios .guide-content").innerHTML = api ? api.guideHtml("ios") : "";
+        document.querySelector("#guide-android .guide-content").innerHTML = api ? api.guideHtml("android") : "";
+        if (platform === "android") document.querySelector(".install-guides").classList.add("android-first");
+        if (platform !== "desktop") document.getElementById("guide-" + platform).classList.add("guide-current");
+
+        function syncButton() {
+          var installed = api && api.isStandalone();
+          document.getElementById("install-installed").classList.toggle("hidden", !installed);
+          document.getElementById("install-now").classList.toggle("hidden", installed || !(api && api.canPrompt()));
+        }
+        if (api) api.onChange(syncButton);
+        syncButton();
+        document.getElementById("install-now").addEventListener("click", function () {
+          api.prompt().then(function (outcome) {
+            if (outcome === "accepted") toast("¡Listo! Skill-Link se está instalando.");
+          });
+        });
+
+        // Código QR que lleva a esta misma página (grande, para que se imprima nítido).
+        document.getElementById("install-link").textContent = pageUrl;
+        var qrBox = document.getElementById("install-qr");
+        if (window.QRCode) {
+          new window.QRCode(qrBox, { text: pageUrl, width: 512, height: 512, colorDark: "#0b2a5b", colorLight: "#ffffff", correctLevel: window.QRCode.CorrectLevel.H });
+          setTimeout(function () {
+            var canvas = qrBox.querySelector("canvas");
+            if (canvas) document.getElementById("qr-download").href = canvas.toDataURL("image/png");
+          }, 100);
+        } else {
+          qrBox.textContent = "No se pudo generar el código QR. Comparte el enlace.";
+        }
+
+        document.getElementById("copy-link").addEventListener("click", function () {
+          var done = function () { toast("Enlace copiado"); };
+          if (navigator.clipboard) navigator.clipboard.writeText(pageUrl).then(done, function () { prompt("Copia el enlace:", pageUrl); });
+          else prompt("Copia el enlace:", pageUrl);
+        });
+      });
+    </script>
+  </body>
+</html>

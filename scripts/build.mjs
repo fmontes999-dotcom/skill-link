@@ -1,9 +1,13 @@
 // Genera la carpeta dist/ que publica Render (Static Site).
 // Lee SUPABASE_URL y SUPABASE_ANON_KEY de las variables de entorno de Render
 // y crea dist/config.js. No usa dependencias externas.
-import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, rm, writeFile } from "node:fs/promises";
 
-const FILES = ["index.html", "styles.css", "app.js"];
+const FILES = [
+  "index.html", "styles.css", "app.js", "install.js", "sw.js", "manifest.webmanifest",
+  "instalar.html", "terminos.html", "privacidad.html",
+];
+const FOLDERS = ["icons"];
 const OUT = "dist";
 
 const url = (process.env.SUPABASE_URL || "").trim().replace(/\/+$/, "");
@@ -41,8 +45,9 @@ if (preview) {
 await rm(OUT, { recursive: true, force: true });
 await mkdir(OUT, { recursive: true });
 for (const file of FILES) await copyFile(file, `${OUT}/${file}`);
+for (const folder of FOLDERS) await cp(folder, `${OUT}/${folder}`, { recursive: true });
 await writeFile(
   `${OUT}/config.js`,
   `window.SKILL_LINK_CONFIG = ${JSON.stringify({ supabaseUrl: url, supabaseAnonKey: key }, null, 2)};\n`,
 );
-console.log(`✓ ${OUT}/ generado (${FILES.length + 1} archivos).`);
+console.log(`✓ ${OUT}/ generado (${FILES.length + 1} archivos y ${FOLDERS.join(", ")}/).`);

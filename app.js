@@ -36,6 +36,8 @@ const LOGIN_KEY = "skill-link-login-v1";
 const OTP_TTL_MS = 15 * 60 * 1000;   // igual que mailer_otp_exp en Supabase (900 s)
 const RESEND_WAIT_MS = 60 * 1000;    // Supabase permite un correo por minuto a la misma persona
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const INSTALL_DISMISS_KEY = "skill-link-install-dismissed";
+const INSTALL_SNOOZE_MS = 14 * 24 * 60 * 60 * 1000;   // el aviso de instalar vuelve a los 14 días
 const PANEL_ALIASES = { perfil: "cuenta", publicaciones: "tienda" };
 const SELLER_TABS = ["ventas", "tienda", "comisiones"];
 
@@ -218,6 +220,35 @@ function validateImage(file, maxBytes) {
   return IMAGE_TYPES[file.type];
 }
 
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.cssText = "position:fixed;opacity:0;pointer-events:none";
+    document.body.append(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+  }
+  showToast(`Copiado: ${text}`);
+}
+
+function copyRow(label, value, copyValue = value, hint = "") {
+  return `
+    <div class="copy-row">
+      <div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>${hint ? `<small>${escapeHtml(hint)}</small>` : ""}</div>
+      <button class="button button-outline" type="button" data-copy="${escapeHtml(copyValue)}" aria-label="Copiar ${escapeHtml(label.toLowerCase())}">Copiar</button>
+    </div>`;
+}
+
+function onPhone() {
+  const platform = window.SkillLinkInstall?.platform();
+  return platform === "ios" || platform === "android";
+}
+
 let toastTimer;
 function showToast(message, isError = false) {
   const toast = $("#toast");
@@ -355,6 +386,71 @@ function setTheme(theme, save = true) {
     }
   }
   $$("[data-theme-switch]").forEach((input) => { input.checked = value === "dark"; });
+}
+
+/* ---------------------------------------------------------------------
+   Pantalla de carga e instalación como app
+   --------------------------------------------------------------------- */
+
+function hideSplash() {
+  const splash = $("#splash");
+  if (!splash || splash.classList.contains("splash-hide")) return;
+  splash.classList.add("splash-hide");
+  window.setTimeout(() => splash.remove(), 450);
+}
+
+function renderInstallSection() {
+  const api = window.SkillLinkInstall;
+  const box = $("#install-content");
+  if (!api) {
+    $("#install-section").classList.add("hidden");
+    return;
+  }
+  if (api.isStandalone()) {
+    box.innerHTML = '<p class="install-done">✓ Ya estás usando Skill-Link como app instalada.</p>';
+    return;
+  }
+  box.innerHTML = `${api.canPrompt() ? '<button class="button button-dark install-button" type="button" data-install>Instalar Skill-Link</button>' : ""}${api.guideHtml()}`;
+}
+
+function installBannerSnoozed() {
+  try {
+    return Date.now() - Number(localStorage.getItem(INSTALL_DISMISS_KEY) || 0) < INSTALL_SNOOZE_MS;
+  } catch {
+    return false;
+  }
+}
+
+function updateInstallBanner() {
+  const api = window.SkillLinkInstall;
+  const show = Boolean(api) && !api.isStandalone() && api.platform() !== "desktop" && !installBannerSnoozed();
+  $("#install-banner").classList.toggle("hidden", !show);
+}
+
+function snoozeInstallBanner() {
+  try {
+    localStorage.setItem(INSTALL_DISMISS_KEY, String(Date.now()));
+  } catch {
+    // Sin almacenamiento: el aviso vuelve a salir la próxima vez.
+  }
+  $("#install-banner").classList.add("hidden");
+}
+
+// Android y computadores: aviso nativo del navegador. iPhone: guía de «Agregar a pantalla de inicio».
+async function startInstall() {
+  const api = window.SkillLinkInstall;
+  if (api?.canPrompt()) {
+    const outcome = await api.prompt();
+    if (outcome === "accepted") {
+      snoozeInstallBanner();
+      showToast("¡Listo! Skill-Link se está instalando en tu dispositivo.");
+    }
+    return;
+  }
+  renderInstallSection();
+  setTheme(currentTheme(), false);
+  if (!els.settingsDialog.open) els.settingsDialog.showModal();
+  $("#install-section").scrollIntoView({ block: "start" });
 }
 
 function themeSwitch() {
@@ -1108,9 +1204,10 @@ function orderCard(order, role) {
     } else {
       note = paid
         ? `El comprador reportó el pago · comprobante ${order.payment_reference}. Verifícalo en tu app de Banco Pichincha antes de entregar.`
-        : `Aún no se reporta el pago. Verifica en tu app de Banco Pichincha que recibiste ${formatPrice(order.total)} antes de entregar.`;
+        : `Aún no se reporta el pago. Si te paga en el Punto Link, muéstrale tu QR de cobro. Verifica en tu app de Banco Pichincha que recibiste ${formatPrice(order.total)} antes de entregar.`;
       noteTone = paid ? "ok" : "attention";
       actions.push(`<button class="button button-dark" type="button" data-action="scan" data-id="${id}">Escanear QR de entrega</button>`);
+      if (!paid) actions.push(`<button class="button button-outline" type="button" data-action="show-my-qr" data-id="${id}">Mostrar mi QR de cobro</button>`);
       actions.push(`<button class="button button-ghost" type="button" data-action="cancel" data-id="${id}">Cancelar</button>`);
     }
   } else if (order.status === "completado") {
@@ -1801,6 +1898,22 @@ function openAcceptSheet(order) {
   });
 }
 
+function paymentReference(order) {
+  return `SKL-${order.code}`;
+}
+
+/* Emprendedor: mostrar su QR de cobro en su celular para que el comprador lo escanee con el suyo. */
+async function openMyQrSheet(order) {
+  const url = await signedQrUrl(state.profile?.payment_qr_path);
+  if (!url) throw new Error("Aún no subiste tu QR de cobro. Súbelo en Mi tienda.");
+  openSheet(`
+    <div class="eyebrow eyebrow-green">TU QR DE COBRO · PEDIDO #${escapeHtml(order.code)}</div>
+    <h2>Cobra ${formatPrice(order.total)}</h2>
+    <p class="dialog-description">Muéstralo al comprador para que lo escanee desde su celular con la app de Banco Pichincha o DeUna. Referencia: <strong>${escapeHtml(paymentReference(order))}</strong>.</p>
+    <div class="qr-frame qr-frame-large"><img src="${escapeHtml(url)}" alt="Tu QR de cobro de Banco Pichincha" /></div>
+    <p class="form-note">Revisa en tu app del banco que llegó el pago antes de entregar. Después escanea el <strong>QR de entrega</strong> del comprador para registrar la venta.</p>`);
+}
+
 /* Comprador: pagar con el QR de Banco Pichincha del emprendedor. */
 async function openPaySheet(order) {
   const seller = order.seller;
@@ -1813,21 +1926,42 @@ async function openPaySheet(order) {
   ]);
   if (!viewUrl) throw new Error("No se pudo cargar el QR de cobro. Intenta de nuevo.");
   const holder = seller.payment_holder || displayName(seller);
-  const sheet = openSheet(`
-    <div class="eyebrow eyebrow-green">PAGO CON QR · BANCO PICHINCHA</div>
-    <h2>Paga ${formatPrice(order.total)}</h2>
-    <p class="dialog-description">Pedido #${escapeHtml(order.code)} · ${escapeHtml(order.product_name)}<br />Titular: <strong>${escapeHtml(holder)}</strong></p>
+  const reference = paymentReference(order);
+  const qrBlock = `
     <div class="qr-frame"><img src="${escapeHtml(viewUrl)}" alt="QR de cobro de Banco Pichincha de ${escapeHtml(holder)}" /></div>
-    ${downloadUrl ? `<a class="text-button qr-download" href="${escapeHtml(downloadUrl)}">¿Estás en el mismo celular? Descarga la imagen del QR</a>` : ""}
+    ${downloadUrl ? `<a class="text-button qr-download" href="${escapeHtml(downloadUrl)}">Descargar la imagen del QR</a>` : ""}`;
+  // Desde el mismo celular no se puede escanear la propia pantalla: en el teléfono se ofrece
+  // pagar en el Punto Link con el QR que muestra el emprendedor en SU celular.
+  const howToPay = onPhone()
+    ? `
+      <div class="pay-option pay-option-main">
+        <strong>¿Pagas desde este mismo celular?</strong>
+        <p>Tu app del banco no puede escanear tu propia pantalla. En el Punto Link, ${escapeHtml(displayName(seller))} te muestra su QR de cobro en su celular y tú lo escaneas con la app de Banco Pichincha o DeUna.</p>
+      </div>
+      <details class="pay-option">
+        <summary>Pagar ahora desde otro dispositivo (ver el QR)</summary>
+        ${qrBlock}
+        <p class="form-note">Ábrelo en un computador o tablet y escanéalo con tu celular.</p>
+      </details>`
+    : qrBlock;
+  const sheet = openSheet(`
+    <div class="eyebrow eyebrow-green">PAGO DIRECTO AL EMPRENDEDOR · BANCO PICHINCHA</div>
+    <h2>Paga ${formatPrice(order.total)}</h2>
+    <p class="dialog-description">Pedido #${escapeHtml(order.code)} · ${escapeHtml(order.product_name)}. El pago va directo a la cuenta de <strong>${escapeHtml(holder)}</strong>: Skill-Link no recibe este dinero.</p>
+    <div class="copy-list">
+      ${copyRow("Monto exacto", formatPrice(order.total), Number(order.total).toFixed(2))}
+      ${copyRow("Referencia del pago", reference, reference, "Escríbela en la descripción del pago.")}
+    </div>
+    ${howToPay}
     <ol class="mini-steps">
-      <li>Abre tu app de Banco Pichincha (Banca Móvil o DeUna) y elige pagar con QR.</li>
-      <li>Escanea este código y verifica que el titular sea <strong>${escapeHtml(holder)}</strong>.</li>
-      <li>Paga exactamente <strong>${formatPrice(order.total)}</strong> y copia aquí el número de comprobante.</li>
+      <li>En la app de Banco Pichincha (Banca Móvil o DeUna), elige pagar con QR y escanea el código.</li>
+      <li>Verifica que el titular sea <strong>${escapeHtml(holder)}</strong> y paga exactamente <strong>${formatPrice(order.total)}</strong>.</li>
+      <li>Escribe aquí el número de comprobante.</li>
     </ol>
     <form id="pay-form">
       <label>Número de comprobante<input name="reference" required minlength="3" maxlength="40" value="${escapeHtml(order.payment_reference || "")}" placeholder="Ej. 123456789" autocomplete="off" /></label>
       <button class="button button-dark dialog-submit" type="submit">${order.payment_reference ? "Actualizar comprobante" : "Ya pagué"} <span>↗</span></button>
-      <p class="form-note">¿Prefieres pagar en el Punto Link? Escanea este mismo QR al momento de la entrega.</p>
+      <p class="form-note">Este QR es solo para pagar. El <strong>QR de entrega</strong> es otro: lo muestras cuando recibes tu pedido.</p>
     </form>`);
   const form = $("#pay-form", sheet);
   form.addEventListener("submit", (event) => {
@@ -1852,7 +1986,7 @@ async function openDeliveryQrSheet(order) {
   const sheet = openSheet(`
     <div class="eyebrow eyebrow-green">QR DE ENTREGA · PEDIDO #${escapeHtml(order.code)}</div>
     <h2>Muéstralo al recibir tu pedido</h2>
-    <p class="dialog-description">Enséñalo solo cuando tengas el pedido en tus manos. Al escanearlo, el emprendedor confirma que recibió tu pago y que te entregó el pedido.</p>
+    <p class="dialog-description">Enséñalo solo cuando tengas el pedido en tus manos. <strong>No es para pagar:</strong> el emprendedor lo escanea desde su celular para confirmar que recibió tu pago y que te entregó el pedido.</p>
     <div class="qr-frame" id="delivery-qr"></div>
     <div class="delivery-code"><span>Código manual</span><strong>${escapeHtml(data.code)}</strong></div>
     <p class="form-note">${escapeHtml(order.pickup_point || "Lugar por coordinar")} · ${escapeHtml(formatDate(order.meeting_at))}</p>`);
@@ -1872,7 +2006,7 @@ function openScanSheet(order) {
   const fee = commissionFor(order.total);
   const sheet = openSheet(`
     <div class="eyebrow eyebrow-green">CONFIRMAR ENTREGA · PEDIDO #${escapeHtml(order.code)}</div>
-    <h2>Escanea el QR del comprador</h2>
+    <h2>Escanea el QR de entrega del comprador</h2>
     <p class="dialog-description">Al confirmar declaras que recibiste <strong>${formatPrice(order.total)}</strong> en tu cuenta de Banco Pichincha y entregaste el pedido. Se registrará la venta con una comisión de ${formatPrice(fee)} (${ratePercent()}).</p>
     <div class="scanner-box" id="qr-reader"><span>Activando la cámara…</span></div>
     <form id="manual-code-form" class="manual-code">
@@ -2067,6 +2201,7 @@ const PANEL_ACTIONS = {
   accept: (id) => openAcceptSheet(getOrder(id)),
   pay: (id) => openPaySheet(getOrder(id)),
   "delivery-qr": (id) => openDeliveryQrSheet(getOrder(id)),
+  "show-my-qr": (id) => openMyQrSheet(getOrder(id)),
   scan: (id) => openScanSheet(getOrder(id)),
   review: (id) => openReviewSheet(getOrder(id)),
   "pay-commissions": () => openCommissionPaySheet(),
@@ -2292,6 +2427,17 @@ function bindEvents() {
   document.addEventListener("click", (event) => {
     const closeButton = event.target.closest("[data-close]");
     if (closeButton) closeButton.closest("dialog")?.close();
+    const copyButton = event.target.closest("[data-copy]");
+    if (copyButton) copyText(copyButton.dataset.copy);
+    if (event.target.closest("[data-install]")) startInstall();
+  });
+
+  // Instalación como app
+  $("#install-banner-button").addEventListener("click", startInstall);
+  $("#install-banner-close").addEventListener("click", snoozeInstallBanner);
+  window.SkillLinkInstall?.onChange(() => {
+    renderInstallSection();
+    updateInstallBanner();
   });
   $$("dialog").forEach((dialog) => {
     dialog.addEventListener("click", (event) => {
@@ -2313,6 +2459,7 @@ function bindEvents() {
   // Configuración: tema claro / oscuro (el interruptor aparece aquí y en «Cuenta»).
   $("#open-settings").addEventListener("click", () => {
     setTheme(currentTheme(), false);
+    renderInstallSection();
     els.settingsDialog.showModal();
   });
   document.addEventListener("change", (event) => {
@@ -2420,10 +2567,12 @@ async function init() {
   bindEvents();
   updateCalculator();
   updatePublishNet();
+  renderInstallSection();
   if (!isConfigured) {
     $("#setup-notice").classList.remove("hidden");
     els.count.textContent = "";
     route();
+    hideSplash();
     return;
   }
   loadSettings();
@@ -2435,6 +2584,8 @@ async function init() {
     showToast(errorMessage(error), true);
   }
   route();
+  hideSplash();
+  window.setTimeout(updateInstallBanner, 2500);
   await loadCatalog();
   loadStores();
 }
