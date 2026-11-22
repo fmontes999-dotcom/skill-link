@@ -4,7 +4,7 @@
    - Las llamadas a Supabase, las fuentes y las librerías externas van directo a internet.
    - Ya trae el manejo de notificaciones push para cuando se activen. */
 
-const CACHE = "skill-link-v1";
+const CACHE = "skill-link-v2";
 const SHELL = [
   "/",
   "/index.html",
@@ -14,7 +14,7 @@ const SHELL = [
   "/config.js",
   "/manifest.webmanifest",
   "/instalar.html",
-  "/icons/logo.svg",
+  "/icons/favicon-32.png",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
 ];

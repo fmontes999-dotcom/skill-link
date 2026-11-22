@@ -14,7 +14,13 @@ Plataforma web exclusiva de la comunidad PUCE que conecta a emprendedores estudi
 
 **App instalable:** Skill-Link se puede instalar en el celular como aplicación web (PWA): ícono propio, pantalla completa y pantalla de carga con el logo. La página de descarga es `/instalar.html`. Tiene el botón de instalar, la guía para iPhone y Android, y un código QR para carteles. En el celular aparece un aviso para instalarla, que vuelve a salir a los 14 días si se cierra.
 
-**Logo:** el de la carpeta `icons/` es **provisional**: dos eslabones entrelazados, en azul. Para cambiarlo por el definitivo, reemplaza `icons/logo.svg` y `icons/logo-maskable.svg` (este último a sangre completa, con el dibujo dentro del 70% central) y vuelve a generar los PNG en los mismos tamaños: 192, 512, 180 (Apple) y 32 (favicon), más `og-image.png` de 1200×630 para la vista previa al compartir el enlace.
+**Logo:** el oficial (escudo con foco y engranaje, azul marino y dorado) está en `icons/logo-fuente.png`. De ahí salen todos los demás archivos, sin estirarlo:
+- `icon-192.png` e `icon-512.png`: con esquinas transparentes. Se usan en la app, el favicon y la app instalada.
+- `maskable-*.png`: el logo al 78% sobre azul marino, para que Android pueda recortarlo en círculo.
+- `apple-touch-icon.png`: solo el interior azul, porque el iPhone redondea las esquinas por su cuenta.
+- `og-image.png`: imagen de 1200×630 para la vista previa al compartir el enlace.
+
+Si cambia el logo, hay que volver a generarlos en esos mismos tamaños.
 
 **Textos legales:** `terminos.html` y `privacidad.html` (versión 1.0), redactados según la Ley Orgánica de Protección de Datos Personales del Ecuador. **Antes de difundirlos hay que reemplazar `[correo de contacto del equipo]`** y revisarlos con el docente.
 
