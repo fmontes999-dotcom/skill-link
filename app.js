@@ -1175,7 +1175,14 @@ function orderCard(order, role) {
   ];
   if (order.pickup_point) details.push(["Entrega", order.pickup_point]);
   if (order.meeting_at) details.push(["Fecha", formatDate(order.meeting_at)]);
-  if (!isBuyer && commission) details.push([`Comisión (${ratePercent(commission.rate)})`, formatPrice(commission.amount)]);
+  if (!isBuyer && commission) {
+    details.push([`Comisión (${ratePercent(commission.rate)})`, formatPrice(commission.amount)]);
+  } else if (!isBuyer && ["pendiente", "aceptado"].includes(order.status)) {
+    // Antes de entregar, el emprendedor ve cuánto se le cobrará y cuánto le queda.
+    const fee = commissionFor(order.total);
+    details.push([`Comisión al entregar (${ratePercent()})`, formatPrice(fee)]);
+    details.push(["Te queda", formatPrice(order.total - fee)]);
+  }
 
   let note = "";
   let noteTone = "";
@@ -1911,6 +1918,7 @@ async function openMyQrSheet(order) {
     <h2>Cobra ${formatPrice(order.total)}</h2>
     <p class="dialog-description">Muéstralo al comprador para que lo escanee desde su celular con la app de Banco Pichincha o DeUna. Referencia: <strong>${escapeHtml(paymentReference(order))}</strong>.</p>
     <div class="qr-frame qr-frame-large"><img src="${escapeHtml(url)}" alt="Tu QR de cobro de Banco Pichincha" /></div>
+    <p class="commission-note">El comprador te paga el total. Al confirmar la entrega se registra tu comisión de ${formatPrice(commissionFor(order.total))} (${ratePercent()}), que pagas después a Skill-Link desde <strong>Comisiones</strong>. Te quedan ${formatPrice(order.total - commissionFor(order.total))}.</p>
     <p class="form-note">Revisa en tu app del banco que llegó el pago antes de entregar. Después escanea el <strong>QR de entrega</strong> del comprador para registrar la venta.</p>`);
 }
 
@@ -1936,7 +1944,7 @@ async function openPaySheet(order) {
     ? `
       <div class="pay-option pay-option-main">
         <strong>¿Pagas desde este mismo celular?</strong>
-        <p>Tu app del banco no puede escanear tu propia pantalla. En el Punto Link, ${escapeHtml(displayName(seller))} te muestra su QR de cobro en su celular y tú lo escaneas con la app de Banco Pichincha o DeUna.</p>
+        <p>Tu app del banco no puede escanear tu propia pantalla. En el Punto Link, ${escapeHtml(holder)} te muestra su QR de cobro en su celular y tú lo escaneas con la app de Banco Pichincha o DeUna.</p>
       </div>
       <details class="pay-option">
         <summary>Pagar ahora desde otro dispositivo (ver el QR)</summary>
@@ -1947,7 +1955,8 @@ async function openPaySheet(order) {
   const sheet = openSheet(`
     <div class="eyebrow eyebrow-green">PAGO DIRECTO AL EMPRENDEDOR · BANCO PICHINCHA</div>
     <h2>Paga ${formatPrice(order.total)}</h2>
-    <p class="dialog-description">Pedido #${escapeHtml(order.code)} · ${escapeHtml(order.product_name)}. El pago va directo a la cuenta de <strong>${escapeHtml(holder)}</strong>: Skill-Link no recibe este dinero.</p>
+    <p class="dialog-description">Pedido #${escapeHtml(order.code)} · ${escapeHtml(order.product_name)}. Pagas el precio publicado, sin recargos, directo a la cuenta de <strong>${escapeHtml(holder)}</strong>.</p>
+    <p class="commission-note"><strong>¿Y la comisión de Skill-Link?</strong> La paga el emprendedor, no tú. Cuando se confirma la entrega, se le registra el ${ratePercent()} de la venta (${formatPrice(commissionFor(order.total))}) y él lo paga después a Skill-Link desde su panel.</p>
     <div class="copy-list">
       ${copyRow("Monto exacto", formatPrice(order.total), Number(order.total).toFixed(2))}
       ${copyRow("Referencia del pago", reference, reference, "Escríbela en la descripción del pago.")}

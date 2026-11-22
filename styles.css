@@ -358,6 +358,8 @@ a.seller-line:hover { text-decoration: underline; }
 .pay-option-main { border-color: var(--info-bg); background: var(--soft); color: var(--on-soft); }
 .pay-option-main p { color: var(--on-soft); }
 .qr-frame-large { width: min(300px, 100%); }
+.commission-note { margin: -8px 0 16px; padding: 10px 12px; border-left: 3px solid var(--primary); border-radius: 0 8px 8px 0; background: var(--surface-2); color: var(--ink); font-size: 13px; line-height: 1.55; }
+.commission-note strong { color: var(--primary); }
 .form-link { display: block; margin: 12px auto 0; }
 .interest-product { display: flex; justify-content: space-between; gap: 12px; margin: 18px 0; padding: 13px; border-radius: 9px; background: var(--soft); color: var(--on-soft); font-size: 13px; }
 .interest-product strong { font-size: 15px; }
