@@ -256,7 +256,8 @@ function showToast(message, isError = false) {
   toast.classList.toggle("toast-error", isError);
   toast.classList.add("visible");
   window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => toast.classList.remove("visible"), isError ? 5200 : 3600);
+  const readingTime = Math.max(isError ? 5200 : 3600, message.length * 55);
+  toastTimer = window.setTimeout(() => toast.classList.remove("visible"), readingTime);
 }
 
 function errorMessage(error) {
@@ -723,8 +724,8 @@ function showStore(sellerId) {
 function loginErrorMessage(error) {
   const message = error?.message || String(error || "");
   const wait = message.match(/after (\d+) seconds?/i);
-  if (wait) return `Espera ${wait[1]} segundos antes de pedir otro código.`;
-  if (/security purposes/i.test(message)) return "Espera un minuto antes de pedir otro código.";
+  if (wait) return `Ya se envió un código a este correo hace menos de un minuto (quizás desde otro dispositivo). Usa ese código o espera ${wait[1]} segundos para pedir otro.`;
+  if (/security purposes/i.test(message)) return "Ya se envió un código hace menos de un minuto. Usa ese código o espera un momento para pedir otro.";
   if (/rate limit|too many/i.test(message)) return "Se alcanzó el límite de correos de acceso. Inténtalo en unos minutos.";
   if (/database error saving new user/i.test(message)) return "Solo pueden crear cuenta los correos @puce.edu.ec.";
   return errorMessage(error);
@@ -793,6 +794,15 @@ function showCodeStep(notice = "") {
 
 async function sendCode(email, isResend = false) {
   const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+  // Si hace menos de un minuto ya se pidió un código (por ejemplo, desde otro dispositivo),
+  // ese correo ya llegó: se pasa a la pantalla del código en vez de quedarse con el error.
+  const wait = !isResend && error && Number((error.message || "").match(/after (\d+) seconds?/i)?.[1]);
+  if (wait) {
+    state.login = { email, sentAt: Date.now() - Math.max(0, RESEND_WAIT_MS - wait * 1000) };
+    saveLogin();
+    showCodeStep("Ya te enviamos un código hace menos de un minuto: búscalo en tu correo y escríbelo aquí.");
+    return;
+  }
   if (error) throw new Error(loginErrorMessage(error));
   state.login = { email, sentAt: Date.now() };
   saveLogin();
@@ -835,7 +845,7 @@ async function verifyCode() {
     if (expired()) {
       setLoginError("El código venció. Solicita uno nuevo.");
     } else if (error.status === 403 || /expired|invalid/i.test(error.message)) {
-      setLoginError(`Código incorrecto. Revisa que sea el del correo más reciente (enviado a las ${formatTime(login.sentAt)}).`);
+      setLoginError("Código incorrecto o ya usado. Cada código sirve una sola vez y solo el último que pediste funciona: si pediste otro desde otro dispositivo, usa ese, o toca «Reenviar código».");
     } else {
       setLoginError(loginErrorMessage(error));
     }

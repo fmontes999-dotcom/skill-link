@@ -378,6 +378,7 @@ a.seller-line:hover { text-decoration: underline; }
 .login-status { margin: -8px 0 16px; padding: 10px 12px; border-radius: 8px; background: var(--soft); color: var(--on-soft); font-size: 13px; line-height: 1.55; }
 #login-code { min-height: 52px; font-family: var(--display); font-size: 26px; font-weight: 800; letter-spacing: .4em; text-align: center; }
 .login-error { margin: -6px 0 14px; padding: 10px 12px; border: 1px solid var(--err-line); border-radius: 8px; background: var(--err-bg); color: var(--err-fg); font-size: 13px; font-weight: 600; line-height: 1.5; }
+.login-devices { margin: -10px 0 16px; text-align: left; }
 .login-links { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin-top: 14px; color: var(--muted); font-size: 13px; }
 
 /* Interruptor (tema oscuro, modo vendedor) */
