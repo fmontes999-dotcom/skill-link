@@ -728,6 +728,9 @@ function loginErrorMessage(error) {
   if (/security purposes/i.test(message)) return "Ya se envió un código hace menos de un minuto. Usa ese código o espera un momento para pedir otro.";
   if (/rate limit|too many/i.test(message)) return "Se alcanzó el límite de correos de acceso. Inténtalo en unos minutos.";
   if (/database error saving new user/i.test(message)) return "Solo pueden crear cuenta los correos @puce.edu.ec.";
+  if (/error sending|smtp|unexpected_failure/i.test(message)) {
+    return "No se pudo enviar el correo con el código: el servicio de correo de Skill-Link está fallando. Avisa a un administrador e inténtalo más tarde.";
+  }
   return errorMessage(error);
 }
 
