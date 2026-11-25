@@ -295,9 +295,13 @@
         <img class="dialog-logo" src="icons/icon-192.png" alt="Skill-Link" width="52" height="52" />
         <div class="eyebrow eyebrow-green">SOLO COMUNIDAD PUCE</div>
         <h2 id="login-title">Ingresa o crea tu cuenta</h2>
-        <p class="dialog-description" id="login-reason">Te enviaremos un código de 6 dígitos a tu correo. No necesitas contraseña.</p>
+        <p class="dialog-description" id="login-reason">Te enviaremos un código de 6 dígitos a tu correo.</p>
         <label>Correo PUCE<input name="email" type="email" required maxlength="120" autocomplete="email" placeholder="nombre@puce.edu.ec" /></label>
+        <p class="login-error hidden" id="login-email-error" role="alert"></p>
         <button class="button button-dark dialog-submit" type="submit">Enviarme el código <span>↗</span></button>
+        <div class="login-links">
+          <button class="text-button" type="button" data-login-step="password">Ya tengo contraseña</button>
+        </div>
         <p class="form-note">Si es tu primera vez, la cuenta se crea sola. Al ingresar aceptas los <a href="terminos.html" target="_blank" rel="noopener">Términos de uso</a> y la <a href="privacidad.html" target="_blank" rel="noopener">Política de privacidad</a>.</p>
       </form>
       <form class="dialog-form hidden" id="login-code-form" novalidate>
@@ -306,7 +310,7 @@
         <div class="eyebrow eyebrow-green">REVISA TU CORREO</div>
         <h2>Escribe tu código</h2>
         <p class="dialog-description">Enviamos un código de 6 dígitos a <strong id="login-sent-to"></strong>. Puedes ir a tu correo a copiarlo y volver: esta pantalla te espera. Si no llega en un minuto, revisa el correo no deseado.</p>
-        <p class="form-note login-devices">¿Usas varios dispositivos? Puedes tener la sesión abierta en todos, pero entra <strong>en uno a la vez</strong>: cada código sirve una sola vez y, al pedir uno nuevo, el anterior deja de funcionar.</p>
+        <p class="form-note login-devices">¿Usas varios dispositivos? Puedes tener la sesión abierta en todos, pero entra <strong>en uno a la vez</strong>: cada código sirve una sola vez y, al pedir uno nuevo, el anterior deja de funcionar. Para no depender del código, crea una contraseña en <strong>Cuenta</strong>.</p>
         <p class="login-status" id="login-status" aria-live="polite"></p>
         <label>Código de 6 dígitos<input id="login-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" aria-describedby="login-error" /></label>
         <p class="login-error hidden" id="login-error" role="alert"></p>
@@ -315,6 +319,20 @@
           <button class="text-button" id="login-resend" type="button">Reenviar código</button>
           <span aria-hidden="true">·</span>
           <button class="text-button" id="login-back" type="button">Usar otro correo</button>
+        </div>
+      </form>
+      <form class="dialog-form hidden" id="login-password-form" novalidate>
+        <button class="dialog-close" type="button" data-close aria-label="Cerrar">×</button>
+        <img class="dialog-logo" src="icons/icon-192.png" alt="Skill-Link" width="52" height="52" />
+        <div class="eyebrow eyebrow-green">SOLO COMUNIDAD PUCE</div>
+        <h2>Entra con tu contraseña</h2>
+        <p class="dialog-description">Sirve si ya creaste una contraseña en <strong>Cuenta</strong>. No necesitas esperar ningún código y puedes entrar en varios dispositivos a la vez.</p>
+        <label>Correo PUCE<input name="email" type="email" maxlength="120" autocomplete="username" placeholder="nombre@puce.edu.ec" /></label>
+        <label>Contraseña<input name="password" type="password" maxlength="72" autocomplete="current-password" /></label>
+        <p class="login-error hidden" id="login-password-error" role="alert"></p>
+        <button class="button button-dark dialog-submit" type="submit">Entrar <span>↗</span></button>
+        <div class="login-links">
+          <button class="text-button" type="button" data-login-step="email">No tengo contraseña: enviarme un código</button>
         </div>
       </form>
     </dialog>

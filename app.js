@@ -33,6 +33,7 @@ const SCANNER_SRC = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
 const FAVORITES_KEY = "skill-link-favorites-v2";
 const THEME_KEY = "skill-link-theme";
 const LOGIN_KEY = "skill-link-login-v1";
+const LOGIN_METHOD_KEY = "skill-link-login-method";   // "code" o "password": el último que funcionó
 const OTP_TTL_MS = 15 * 60 * 1000;   // igual que mailer_otp_exp en Supabase (900 s)
 const RESEND_WAIT_MS = 60 * 1000;    // Supabase permite un correo por minuto a la misma persona
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -729,9 +730,50 @@ function loginErrorMessage(error) {
   if (/rate limit|too many/i.test(message)) return "Se alcanzó el límite de correos de acceso. Inténtalo en unos minutos.";
   if (/database error saving new user/i.test(message)) return "Solo pueden crear cuenta los correos @puce.edu.ec.";
   if (/error sending|smtp|unexpected_failure/i.test(message)) {
-    return "No se pudo enviar el correo con el código: el servicio de correo de Skill-Link está fallando. Avisa a un administrador e inténtalo más tarde.";
+    return "No se pudo enviar el correo con el código: el servicio de correo de Skill-Link está fallando. Si ya creaste una contraseña, toca «Ya tengo contraseña». Si no, avisa a un administrador e inténtalo más tarde.";
   }
   return errorMessage(error);
+}
+
+function passwordLoginErrorMessage(error) {
+  const code = error?.code || "";
+  const message = error?.message || "";
+  if (code === "invalid_credentials" || /invalid login credentials/i.test(message)) {
+    return "Correo o contraseña incorrectos. Si todavía no creaste una contraseña, entra con código y créala en «Cuenta».";
+  }
+  if (code === "email_not_confirmed" || /email not confirmed/i.test(message)) {
+    return "Este correo todavía no está confirmado. Entra una vez con código.";
+  }
+  return errorMessage(error);
+}
+
+function newPasswordErrorMessage(error) {
+  const code = error?.code || "";
+  const message = error?.message || "";
+  if (code === "same_password" || /different from the old/i.test(message)) return "Esa ya es tu contraseña actual.";
+  if (code === "weak_password" || /password should/i.test(message)) {
+    return "Esa contraseña es muy débil. Usa al menos 8 caracteres, combinando letras y números.";
+  }
+  if (code === "reauthentication_needed" || /reauthenticat/i.test(message)) {
+    return "Por seguridad, cierra sesión, vuelve a entrar con código y crea la contraseña enseguida.";
+  }
+  return errorMessage(error);
+}
+
+function preferredLoginMethod() {
+  try {
+    return localStorage.getItem(LOGIN_METHOD_KEY) === "password" ? "password" : "code";
+  } catch {
+    return "code";
+  }
+}
+
+function rememberLoginMethod(method) {
+  try {
+    localStorage.setItem(LOGIN_METHOD_KEY, method);
+  } catch {
+    // Sin almacenamiento: la próxima vez se abre con el código, que es lo normal.
+  }
 }
 
 // El código pendiente se guarda en el navegador: si el celular recarga la página mientras
@@ -763,8 +805,8 @@ function clearSavedLogin() {
   }
 }
 
-function setLoginError(message) {
-  const box = $("#login-error");
+function setLoginError(message, boxId = "login-error") {
+  const box = $(`#${boxId}`);
   box.textContent = message;
   box.classList.toggle("hidden", !message);
 }
@@ -858,6 +900,31 @@ async function verifyCode() {
   // La sesión queda abierta: onAuthStateChange cierra el diálogo y retoma lo pendiente.
   state.login = null;
   clearSavedLogin();
+  rememberLoginMethod("code");
+}
+
+// Respaldo: quien ya creó una contraseña en «Cuenta» entra sin depender del correo.
+// También evita el problema de los códigos al usar varios dispositivos.
+async function loginWithPassword(form) {
+  const values = new FormData(form);
+  const email = String(values.get("email") || "").trim().toLowerCase();
+  const password = String(values.get("password") || "");
+  const fail = (message, field) => {
+    setLoginError(message, "login-password-error");
+    form.elements[field].focus();
+  };
+  setLoginError("", "login-password-error");
+  if (!PUCE_EMAIL.test(email)) return fail("Usa tu correo institucional @puce.edu.ec.", "email");
+  if (!password) return fail("Escribe tu contraseña.", "password");
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) {
+    fail(passwordLoginErrorMessage(error), "password");
+    form.elements.password.select();
+    return;
+  }
+  // Igual que con el código: onAuthStateChange cierra el diálogo y retoma lo pendiente.
+  form.elements.password.value = "";
+  rememberLoginMethod("password");
 }
 
 async function initAuth() {
@@ -966,7 +1033,7 @@ async function refreshBadge() {
 function openLogin(reason, after) {
   if (!requireConfigured()) return;
   state.pendingAction = after || null;
-  $("#login-reason").textContent = reason || "Te enviaremos un código de 6 dígitos a tu correo. No necesitas contraseña.";
+  $("#login-reason").textContent = reason || "Te enviaremos un código de 6 dígitos a tu correo.";
   // Si ya hay un código vigente, se vuelve a esa pantalla en vez de pedir otro.
   if (!state.login || Date.now() - state.login.sentAt > OTP_TTL_MS) {
     const saved = savedLogin();
@@ -976,14 +1043,40 @@ function openLogin(reason, after) {
     saveLogin();
     showCodeStep();
   } else {
-    showLoginStep("email");
+    // Quien entró con contraseña la última vez ve directamente ese formulario.
+    showLoginStep(preferredLoginMethod() === "password" ? "password" : "email");
   }
   if (!els.loginDialog.open) els.loginDialog.showModal();
 }
 
 function showLoginStep(step) {
-  $("#login-email-form").classList.toggle("hidden", step !== "email");
+  const emailForm = $("#login-email-form");
+  const passwordForm = $("#login-password-form");
+  // El correo ya escrito pasa de un formulario al otro.
+  if (step === "password" && !passwordForm.elements.email.value) {
+    passwordForm.elements.email.value = emailForm.elements.email.value.trim() || state.login?.email || "";
+  }
+  if (step === "email" && !emailForm.elements.email.value) {
+    emailForm.elements.email.value = passwordForm.elements.email.value.trim();
+  }
+  emailForm.classList.toggle("hidden", step !== "email");
   $("#login-code-form").classList.toggle("hidden", step !== "code");
+  passwordForm.classList.toggle("hidden", step !== "password");
+  setLoginError("", "login-email-error");
+  setLoginError("", "login-password-error");
+}
+
+function switchLoginStep(step) {
+  if (step === "password") {
+    // Si había un código en espera, se descarta: la persona eligió entrar con contraseña.
+    state.login = null;
+    clearSavedLogin();
+    window.clearInterval(resendTimer);
+  }
+  showLoginStep(step);
+  const form = $(step === "password" ? "#login-password-form" : "#login-email-form");
+  const field = step === "password" && form.elements.email.value ? form.elements.password : form.elements.email;
+  window.setTimeout(() => field.focus(), 30);
 }
 
 function useOtherEmail() {
@@ -1614,16 +1707,31 @@ async function renderAccount() {
   const sellerLinks = seller
     ? `<p class="account-links"><a class="text-button" href="#panel/tienda">Ir a mi tienda</a>${state.store ? ` · <a class="text-button" href="#tienda/${escapeHtml(uid())}">Verla como comprador</a>` : ""}</p>`
     : "";
+  const hasPassword = Boolean(state.session?.user?.user_metadata?.has_password);
+  const passwordText = hasPassword
+    ? "Ya tienes contraseña: puedes entrar con tu correo y tu contraseña desde cualquier dispositivo, sin esperar el código. Si quieres, cámbiala aquí."
+    : "Crea una contraseña para entrar sin esperar el código. Sirve para abrir Skill-Link en varios dispositivos a la vez y como respaldo si el correo con el código tarda o falla.";
   return sectionHead("Cuenta", "Tus datos, la opción para vender y la configuración de la aplicación.") + `
     <div class="panel-form-grid">
-      <form class="panel-card" id="account-form">
-        <h3>Tus datos</h3>
-        <label>Nombre completo<input name="full_name" required minlength="3" maxlength="60" value="${escapeHtml(profile.full_name)}" placeholder="Ej. Camila Ajila" autocomplete="name" /></label>
-        <label>Correo institucional<input value="${escapeHtml(profile.email)}" disabled /></label>
-        <label>WhatsApp (opcional)<input name="phone" maxlength="16" pattern="[0-9+ ]{7,16}" value="${escapeHtml(profile.phone || "")}" placeholder="0991234567" inputmode="tel" autocomplete="tel" /></label>
-        <p class="help-text">Tu nombre, correo y WhatsApp solo los ven las personas con las que tienes un pedido.</p>
-        <button class="button button-dark" type="submit">Guardar datos</button>
-      </form>
+      <div class="panel-stack">
+        <form class="panel-card" id="account-form">
+          <h3>Tus datos</h3>
+          <label>Nombre completo<input name="full_name" required minlength="3" maxlength="60" value="${escapeHtml(profile.full_name)}" placeholder="Ej. Camila Ajila" autocomplete="name" /></label>
+          <label>Correo institucional<input value="${escapeHtml(profile.email)}" disabled /></label>
+          <label>WhatsApp (opcional)<input name="phone" maxlength="16" pattern="[0-9+ ]{7,16}" value="${escapeHtml(profile.phone || "")}" placeholder="0991234567" inputmode="tel" autocomplete="tel" /></label>
+          <p class="help-text">Tu nombre, correo y WhatsApp solo los ven las personas con las que tienes un pedido.</p>
+          <button class="button button-dark" type="submit">Guardar datos</button>
+        </form>
+        <form class="panel-card" id="password-form">
+          <h3>${hasPassword ? "Tu contraseña" : "Contraseña (opcional)"}</h3>
+          <p class="help-text">${escapeHtml(passwordText)}</p>
+          <input name="username" type="email" value="${escapeHtml(profile.email)}" autocomplete="username" class="hidden" readonly />
+          <label>${hasPassword ? "Nueva contraseña" : "Contraseña"}<input name="password" type="password" required minlength="8" maxlength="72" autocomplete="new-password" /></label>
+          <label>Repite la contraseña<input name="confirm" type="password" required minlength="8" maxlength="72" autocomplete="new-password" /></label>
+          <p class="help-text">Mínimo 8 caracteres, con letras y números. No uses la misma de tu correo PUCE.</p>
+          <button class="button button-dark" type="submit">${hasPassword ? "Cambiar contraseña" : "Crear contraseña"}</button>
+        </form>
+      </div>
       <div class="panel-stack">
         <div class="panel-card">
           <h3>Vender en Skill-Link</h3>
@@ -1658,6 +1766,24 @@ async function saveAccount(form) {
   updateHeader();
   $("#panel-greeting").textContent = `Hola, ${fullName.split(" ")[0]}`;
   showToast("Datos guardados.");
+}
+
+async function savePassword(form) {
+  const values = new FormData(form);
+  const password = String(values.get("password") || "");
+  const confirm = String(values.get("confirm") || "");
+  if (password.length < 8) throw new Error("La contraseña debe tener al menos 8 caracteres.");
+  if (!/\p{L}/u.test(password) || !/\d/.test(password)) throw new Error("Usa letras y números en tu contraseña.");
+  if (password.toLowerCase() === String(state.profile?.email || "").toLowerCase()) throw new Error("No uses tu correo como contraseña.");
+  if (password !== confirm) throw new Error("Las dos contraseñas no coinciden.");
+  // has_password solo sirve para mostrar el texto correcto aquí; la contraseña la guarda Supabase cifrada.
+  const { data, error } = await sb.auth.updateUser({ password, data: { has_password: true } });
+  if (error) throw isAuthExpired(error) ? error : new Error(newPasswordErrorMessage(error));
+  if (data?.user && state.session) state.session = { ...state.session, user: data.user };
+  form.reset();
+  rememberLoginMethod("password");
+  showToast("Contraseña guardada. Desde ahora puedes entrar con tu correo y esta contraseña, sin esperar el código.");
+  renderPanelTab();
 }
 
 async function setSellerFlag(value) {
@@ -2467,7 +2593,10 @@ function bindEvents() {
     });
   });
   els.sheetDialog.addEventListener("close", stopScanner);
-  els.loginDialog.addEventListener("close", () => window.clearInterval(resendTimer));
+  els.loginDialog.addEventListener("close", () => {
+    window.clearInterval(resendTimer);
+    $("#login-password-form").elements.password.value = "";
+  });
 
   $("#open-login").addEventListener("click", () => openLogin());
   $("#open-publish").addEventListener("click", () => openProductDialog());
@@ -2493,10 +2622,30 @@ function bindEvents() {
     event.preventDefault();
     const form = event.currentTarget;
     withBusy(form, async () => {
+      // Los errores se muestran dentro del formulario (no en un aviso que desaparece),
+      // para que se vea la opción de entrar con contraseña si el correo falla.
+      setLoginError("", "login-email-error");
       const email = String(new FormData(form).get("email")).trim().toLowerCase();
-      if (!PUCE_EMAIL.test(email)) throw new Error("Usa tu correo institucional @puce.edu.ec.");
-      await sendCode(email);
+      if (!PUCE_EMAIL.test(email)) {
+        setLoginError("Usa tu correo institucional @puce.edu.ec.", "login-email-error");
+        return;
+      }
+      try {
+        await sendCode(email);
+      } catch (error) {
+        console.error(error);
+        setLoginError(errorMessage(error), "login-email-error");
+      }
     });
+  });
+  $("#login-password-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    withBusy(form, () => loginWithPassword(form));
+  });
+  els.loginDialog.addEventListener("click", (event) => {
+    const link = event.target.closest("[data-login-step]");
+    if (link) switchLoginStep(link.dataset.loginStep);
   });
   $("#login-code-form").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -2559,7 +2708,12 @@ function bindEvents() {
     event.preventDefault();
     withBusy(button, () => handler(button.dataset.id, button));
   });
-  const PANEL_FORMS = { "account-form": saveAccount, "store-form": saveStore, "admin-settings-form": saveAdminSettings };
+  const PANEL_FORMS = {
+    "account-form": saveAccount,
+    "password-form": savePassword,
+    "store-form": saveStore,
+    "admin-settings-form": saveAdminSettings,
+  };
   els.panelContent.addEventListener("submit", (event) => {
     const form = event.target;
     const save = PANEL_FORMS[form.id];

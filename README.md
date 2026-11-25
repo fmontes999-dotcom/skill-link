@@ -8,6 +8,8 @@ Plataforma web exclusiva de la comunidad PUCE que conecta a emprendedores estudi
 
 **Cuentas:** todos entran como compradores. Quien quiere vender activa **«Quiero vender»** en **Cuenta** y crea su **tienda**: logo, nombre del emprendimiento, eslogan, descripción, carrera o facultad (opcional), redes sociales, días y horarios, y Puntos Link donde entrega. Ahí también arma su **catálogo**: cada producto tiene su foto, descripción, categoría y precio, y se puede editar, pausar o eliminar sin volver a publicarlo. El comprador puede abrir la tienda desde cualquier producto y pedir desde ahí.
 
+**Ingreso:** con un código de 6 dígitos que llega al correo PUCE. Una vez dentro, cada persona puede crear una **contraseña** en **Cuenta** (opcional). Con ella entra con **«Ya tengo contraseña»**, sin esperar el código, en varios dispositivos a la vez, y aunque el correo de códigos falle. La primera vez siempre se entra con código: así se comprueba que el correo PUCE es de quien se registra.
+
 **Precio mínimo de venta:** $1.00. El administrador puede cambiarlo, y la base de datos lo valida al crear y al editar un producto.
 
 **Tema claro y oscuro:** se cambia en **Configuración** (el ícono de engranaje) o en **Cuenta**. El navegador lo recuerda. Los colores predominantes son azules.
@@ -90,6 +92,19 @@ render.yaml         Blueprint de Render
    - **Redirect URLs:** agrega esa misma URL y, para pruebas locales, `http://localhost:5500`.
 5. **Correo SMTP propio (obligatorio para usar códigos).** El correo incluido en Supabase solo envía 2 correos por hora y no deja editar las plantillas. Configura un SMTP en **Authentication → Emails → SMTP Settings** (Gmail con contraseña de aplicación, Brevo o Resend).
    *En el proyecto actual ya está conectado un Gmail, con un límite de 100 correos por hora; Gmail permite unos 500 al día.*
+
+   ⚠️ **Si se cambia la contraseña de esa cuenta de Google, Google borra todas sus contraseñas de aplicación** y nadie puede volver a entrar a Skill-Link. Pasó el 24 de noviembre de 2026. Para evitarlo:
+   - Lo ideal es un **Gmail solo para Skill-Link** (por ejemplo, uno del equipo), con verificación en 2 pasos, que nadie use para otra cosa y cuya contraseña no se cambie.
+   - No borres la contraseña de aplicación que usa Supabase (hoy se llama «Skill-Link 2»).
+   - La **alarma** `.github/workflows/revisar-correo.yml` comprueba cada 6 horas que Gmail acepte la contraseña, sin enviar ningún correo. Si falla, GitHub avisa por correo al dueño del repositorio. Necesita los secretos `SMTP_USER` y `SMTP_PASSWORD` en GitHub → Settings → Secrets and variables → Actions. También se puede correr a mano desde la pestaña **Actions**.
+
+   **Si sale «No se pudo enviar el correo con el código»:**
+   1. Revisa la actividad de seguridad de la cuenta de Gmail.
+   2. Crea una contraseña de aplicación nueva en https://myaccount.google.com/apppasswords.
+   3. Pégala sin espacios en Supabase → **Authentication → Emails → SMTP Settings → Password** y toca **Save**.
+   4. Actualiza también el secreto `SMTP_PASSWORD` en GitHub.
+
+   Mientras tanto, quien ya creó una contraseña en **Cuenta** puede seguir entrando con **«Ya tengo contraseña»**.
 6. **Plantillas con código y sin enlace.** En **Authentication → Emails → Templates**, las plantillas **Magic Link** y **Confirm signup** deben traer solo el código `{{ .Token }}`, sin `{{ .ConfirmationURL }}`:
 
    ```html
